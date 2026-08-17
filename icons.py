@@ -28,6 +28,12 @@ _PATHS = {
     'drop':   ('<path d="M8 2.4c0 0-3.7 4.2-3.7 6.6a3.7 3.7 0 0 0 7.4 0C11.7 6.6 8 2.4 8 2.4Z"/>'),
     'power':  ('<path d="M8 2.6v4.8"/><path d="M5.1 4.7a4.4 4.4 0 1 0 5.8 0"/>'),
     'chevron': ('<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>'),
+    # Overlay menu button.  This was the text glyph U+22EE, which Poppins does
+    # not contain, so it relied on Qt font fallback finding it elsewhere on the
+    # system -- and rendered as a tofu box wherever that failed.
+    'kebab':  ('<circle cx="8" cy="3.6" r="1.15" fill="CLR" stroke="none"/>'
+               '<circle cx="8" cy="8" r="1.15" fill="CLR" stroke="none"/>'
+               '<circle cx="8" cy="12.4" r="1.15" fill="CLR" stroke="none"/>'),
 }
 
 _SVG = ('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" '

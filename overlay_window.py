@@ -3,6 +3,7 @@ HydraPing - Glassmorphic Hydration Reminder Overlay
 A sleek PySide6-based desktop overlay with advanced glassmorphism design
 """
 
+import functools
 import re
 import sys
 import os
@@ -16,13 +17,36 @@ from layouts import LayoutManager
 _RGBA_RE = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)')
 
 
-def parse_rgba(value, fallback=(255, 255, 255, 255)):
-    """Parse an 'rgba(r,g,b,a)' theme token into a QColor (alpha 0-255)."""
+@functools.lru_cache(maxsize=256)
+def _rgba_tuple(value, fallback):
+    """Parse 'rgba(r,g,b,a)' to a plain tuple.
+
+    Cached on the token string: theme colours are a fixed, tiny set, but
+    paintEvent re-reads them on every frame of the hover animation.  The cache
+    holds tuples rather than QColors deliberately -- QColor is mutable, and
+    callers do mutate what they get back (setAlpha), which would poison a cache
+    of shared instances.
+    """
     match = _RGBA_RE.match(value.strip()) if isinstance(value, str) else None
     if not match:
-        return QtGui.QColor(*fallback)
+        return fallback
     r, g, b, a = match.groups()
-    return QtGui.QColor(int(r), int(g), int(b), int(float(a)) if a is not None else 255)
+    return (int(r), int(g), int(b), int(float(a)) if a is not None else 255)
+
+
+@functools.lru_cache(maxsize=64)
+def rgb_triplet(value):
+    """Parse an 'r,g,b' edge token to a tuple, cached."""
+    try:
+        parts = [int(p) for p in value.split(',')]
+        return tuple(parts[:3]) if len(parts) >= 3 else (255, 255, 255)
+    except (ValueError, AttributeError):
+        return (255, 255, 255)
+
+
+def parse_rgba(value, fallback=(255, 255, 255, 255)):
+    """Parse an 'rgba(r,g,b,a)' theme token into a fresh QColor (alpha 0-255)."""
+    return QtGui.QColor(*_rgba_tuple(value, fallback))
 
 
 def lerp_color(a, b, t):
@@ -117,7 +141,7 @@ class CircularProgress(QtWidgets.QWidget):
             else:
                 color_str = colors['high']
             
-            color = self._parse_rgba(color_str)
+            color = parse_rgba(color_str, (255, 255, 255, 220))
             rect = QtCore.QRectF(center.x() - radius, center.y() - radius, radius * 2, radius * 2)
             span_angle = int(self._animated_progress * 360 / 100 * 16)
             
@@ -235,8 +259,9 @@ class OverlayWindow(QtWidgets.QWidget):
         # ---- rim: one stroke whose alpha varies around the perimeter
         rim = QtGui.QLinearGradient(rect.topLeft(), rect.bottomRight())
         for offset, rgb, alpha in self.theme_manager.get_rim_stops(t):
-            colour = parse_rgba('rgba(%s,%d)' % (rgb, alpha))
-            rim.setColorAt(offset, colour)
+            # Direct construction: the alpha changes every hover frame, so a
+            # formatted 'rgba(...)' string would miss the parse cache every time.
+            rim.setColorAt(offset, QtGui.QColor(*rgb_triplet(rgb), int(alpha)))
 
         path = QtGui.QPainterPath()
         path.addRoundedRect(body, body_radius, body_radius)
@@ -258,8 +283,9 @@ class OverlayWindow(QtWidgets.QWidget):
                                 -feather_inset, -feather_inset)
         if feather.width() > 0 and feather.height() > 0:
             inner = QtGui.QLinearGradient(feather.topLeft(), feather.bottomLeft())
-            inner.setColorAt(0.0, parse_rgba('rgba(%s,%d)' % (edge_hi, round(34 * (1 + 0.45 * t)))))
-            inner.setColorAt(0.45, parse_rgba('rgba(%s,0)' % edge_hi))
+            hi = rgb_triplet(edge_hi)
+            inner.setColorAt(0.0, QtGui.QColor(*hi, round(34 * (1 + 0.45 * t))))
+            inner.setColorAt(0.45, QtGui.QColor(*hi, 0))
             inner_pen = QtGui.QPen(QtGui.QBrush(inner), 0.9)
             inner_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
             painter.setPen(inner_pen)
@@ -273,9 +299,10 @@ class OverlayWindow(QtWidgets.QWidget):
         if rect.width() > radius * 2:
             y = feather_inset + 0.6
             sheen = QtGui.QLinearGradient(radius, y, rect.width() - radius, y)
-            sheen.setColorAt(0.0, parse_rgba('rgba(%s,0)' % edge_hi))
-            sheen.setColorAt(0.35, parse_rgba('rgba(%s,%d)' % (edge_hi, round(60 * (1 + 0.45 * t)))))
-            sheen.setColorAt(0.82, parse_rgba('rgba(%s,0)' % edge_hi))
+            hi = rgb_triplet(edge_hi)
+            sheen.setColorAt(0.0, QtGui.QColor(*hi, 0))
+            sheen.setColorAt(0.35, QtGui.QColor(*hi, round(60 * (1 + 0.45 * t))))
+            sheen.setColorAt(0.82, QtGui.QColor(*hi, 0))
             sheen_pen = QtGui.QPen(QtGui.QBrush(sheen), 1.0)
             sheen_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
             painter.setPen(sheen_pen)
@@ -577,6 +604,15 @@ class OverlayWindow(QtWidgets.QWidget):
                     background: rgba({edge_hi},12);
                 }}
             """)
+            try:
+                import icons
+                dpr = self.devicePixelRatioF() or 1.0
+                self._menu_button.setIcon(
+                    icons.icon('kebab', parse_rgba(theme['text_secondary']), 16, dpr))
+                self._menu_button.setIconSize(QtCore.QSize(16, 16))
+            except Exception:
+                # Icon rendering unavailable: fall back to the text glyph.
+                self._menu_button.setText("⋮")
         
         # Update progress widget
         if hasattr(self, '_progress_widget'):
@@ -630,7 +666,8 @@ class OverlayWindow(QtWidgets.QWidget):
         
         # Menu button (⋮)
         self._menu_button = QtWidgets.QToolButton(container)
-        self._menu_button.setText("⋮")
+        # Icon set in _update_theme_colors so it can follow the theme colour.
+        self._menu_button.setText("")
         self._menu_button.setFixedSize(30, 30)
         self._menu_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._menu_button.setStyleSheet("""
