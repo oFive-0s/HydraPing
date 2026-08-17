@@ -6,6 +6,10 @@ Accessible from overlay context menu
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 from core.auto_launch import is_auto_launch_enabled, enable_auto_launch, disable_auto_launch
+from theme_manager import ThemeManager
+import ui_kit
+import icons
+import window_chrome
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -23,619 +27,361 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle("HydraPing Settings")
         self.setModal(True)
         self.setFixedSize(525, 650)  # Increased height for new settings
-        
+
+        # The dialog follows the same theme as the overlay it configures, rather
+        # than the fixed Material palette it used to hardcode.
+        self._theme_name = self.settings.get('theme', 'Dark Glassmorphic')
+
         # Set window icon
-        import os
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.png')
         if os.path.exists(icon_path):
             self.setWindowIcon(QtGui.QIcon(icon_path))
-        
+
         self._setup_ui()
         self._load_settings()
-        self._apply_monochrome_style()
-    
-    def _create_smooth_effect(self):
-        """Create a graphics effect for ultra-smooth button edges"""
-        blur = QtWidgets.QGraphicsBlurEffect()
-        blur.setBlurRadius(0.5)  # Very subtle blur for edge smoothing
-        blur.setBlurHints(QtWidgets.QGraphicsBlurEffect.BlurHint.QualityHint)
-        return blur
-        
+        self._apply_theme()
+
+    # ---- small builders -------------------------------------------------
+
+    def _group(self, title):
+        """A titled group: sticky-ish header + rounded card. Returns (card_layout)."""
+        header = QtWidgets.QLabel(title.upper())
+        header.setObjectName("groupHeader")
+        self._content_layout.addWidget(header)
+        self._content_layout.addSpacing(4)
+
+        card = QtWidgets.QFrame()
+        card.setObjectName("groupCard")
+        inner = QtWidgets.QVBoxLayout(card)
+        inner.setContentsMargins(12, 2, 12, 2)
+        inner.setSpacing(0)
+        self._content_layout.addWidget(card)
+        self._content_layout.addSpacing(12)
+        return inner
+
+    def _row(self, card, label, widget, hint=None, first=False):
+        """One label/control row inside a group card."""
+        if not first:
+            card.addWidget(ui_kit.divider())
+
+        row = QtWidgets.QWidget()
+        row.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, False)
+        h = QtWidgets.QHBoxLayout(row)
+        h.setContentsMargins(0, 7, 0, 7)
+        h.setSpacing(14)
+
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
+        name = QtWidgets.QLabel(label)
+        name.setObjectName("rowLabel")
+        text_col.addWidget(name)
+        row.hint_label = None
+        if hint:
+            sub = QtWidgets.QLabel(hint)
+            sub.setObjectName("rowHint")
+            text_col.addWidget(sub)
+            # Exposed so callers can update it later (the sound row shows the
+            # chosen filename here) without hunting through findChildren().
+            row.hint_label = sub
+        h.addLayout(text_col, 1)
+        h.addWidget(widget, 0, QtCore.Qt.AlignmentFlag.AlignRight)
+
+        card.addWidget(row)
+        return row
+
+    def _icon_button(self, name, tooltip, checkable=False):
+        btn = QtWidgets.QPushButton()
+        btn.setObjectName("iconButton")
+        btn.setFixedSize(30, 30)
+        btn.setToolTip(tooltip)
+        btn.setCheckable(checkable)
+        btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._icon_buttons.append((btn, name))
+        return btn
+
     def _setup_ui(self):
-        """Setup the dialog UI"""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-        
-        # Title
+        """Build the dialog: header, scrollable groups, sticky footer."""
+        self._icon_buttons = []
+
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ---- header ------------------------------------------------------
+        head = QtWidgets.QWidget()
+        head_layout = QtWidgets.QVBoxLayout(head)
+        head_layout.setContentsMargins(22, 16, 22, 10)
+        head_layout.setSpacing(1)
         title = QtWidgets.QLabel("Settings")
-        title.setStyleSheet("font-size: 18px; font-weight: 700; color: #E8EAED;")
-        layout.addWidget(title)
-        
-        # Scroll area for settings
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-            QScrollBar:vertical {
-                background: #202124;
-                width: 6px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical {
-                background: #5F6368;
-                border-radius: 3px;
-                min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #8AB4F8;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
-        
-        # Container widget for scrollable content
-        scroll_content = QtWidgets.QWidget()
-        scroll_content.setStyleSheet("background: #202124;")
-        scroll_layout = QtWidgets.QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(0)
-        
-        # Settings form
-        form_widget = QtWidgets.QWidget()
-        form_widget.setObjectName("settingsForm")
-        form_widget.setStyleSheet("""
-            QWidget#settingsForm {
-                background: #202124; /* Chrome dark background */
-                border-radius: 8px;
-                padding: 12px 12px 0px 12px;
-            }
-            /* Form labels (left column) */
-            #settingsForm QLabel { color: #BDC1C6; font-size: 12px; }
-        """)
-        form_layout = QtWidgets.QFormLayout(form_widget)
-        form_layout.setContentsMargins(12, 12, 12, 12)
-        form_layout.setSpacing(0)
-        form_layout.setHorizontalSpacing(16)
-        form_layout.setVerticalSpacing(10)
-        form_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        
-        # Daily Goal
+        title.setObjectName("dialogTitle")
+        self._subtitle = QtWidgets.QLabel("")
+        self._subtitle.setObjectName("dialogSubtitle")
+        head_layout.addWidget(title)
+        head_layout.addWidget(self._subtitle)
+        root.addWidget(head)
+
+        # ---- scrollable body ---------------------------------------------
+        self._scroll = ui_kit.SmoothScrollArea()
+        content = QtWidgets.QWidget()
+        content.setObjectName("scrollContent")
+        self._content_layout = QtWidgets.QVBoxLayout(content)
+        self._content_layout.setContentsMargins(22, 6, 22, 10)
+        self._content_layout.setSpacing(0)
+
+        # ── Hydration ──
+        card = self._group("Hydration")
+
         self.goal_spin = QtWidgets.QSpinBox()
         self.goal_spin.setRange(250, 10000)
         self.goal_spin.setSingleStep(50)
         self.goal_spin.setSuffix(" ml")
-        self.goal_spin.setMinimumWidth(150)
-        self.goal_spin.setStyleSheet("""
-            QSpinBox {
-                padding: 6px 10px;
-                border: 2px solid #3C4043;
-                border-radius: 6px;
-                font-size: 13px;
-                background: #2B2B2B;
-                color: #E8EAED;
-            }
-            QSpinBox:focus {
-                border-color: #5F6368; /* neutral focus */
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                border: none;
-                background: transparent;
-            }
-        """)
-        form_layout.addRow("Daily Goal:", self.goal_spin)
-        
-        # Reminder Interval
-        self.interval_spin = QtWidgets.QSpinBox()
-        self.interval_spin.setRange(5, 240)
-        self.interval_spin.setSingleStep(1)
-        self.interval_spin.setSuffix(" min")
-        self.interval_spin.setMinimumWidth(150)
-        self.interval_spin.setStyleSheet(self.goal_spin.styleSheet())
-        form_layout.addRow("Reminder Interval:", self.interval_spin)
-        
-        # Default Sip Size
+        self.goal_spin.setMinimumWidth(112)
+        self.goal_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
+                                    QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._row(card, "Daily goal", self.goal_spin, first=True)
+
         self.sip_spin = QtWidgets.QSpinBox()
         self.sip_spin.setRange(50, 1000)
         self.sip_spin.setSingleStep(50)
         self.sip_spin.setSuffix(" ml")
-        self.sip_spin.setMinimumWidth(150)
-        self.sip_spin.setStyleSheet(self.goal_spin.styleSheet())
-        form_layout.addRow("Default Sip Size:", self.sip_spin)
-        
-        # Snooze Duration
+        self.sip_spin.setMinimumWidth(112)
+        self.sip_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
+                                   QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._row(card, "Default sip size", self.sip_spin, "Logged per tap")
+
+        presets = QtWidgets.QWidget()
+        pl = QtWidgets.QHBoxLayout(presets)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.setSpacing(6)
+        self._preset_buttons = []
+        for label, ml in (("Light", 2000), ("Moderate", 2500), ("High", 3000)):
+            b = QtWidgets.QPushButton(f"{label}\n{ml}ml")
+            b.setObjectName("presetChip")
+            b.setCheckable(True)
+            # Sizing lives in the stylesheet (min-width/min-height on
+            # #presetChip), NOT setFixedSize: applying a stylesheet re-polishes
+            # the widget and QSS min-height overrides the fixed size set here,
+            # which silently squashed these to 26px and clipped both text lines.
+            b.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, v=ml: self.goal_spin.setValue(v))
+            pl.addWidget(b)
+            self._preset_buttons.append((b, ml))
+        self._row(card, "Quick presets", presets)
+        self.goal_spin.valueChanged.connect(self._sync_preset_chips)
+
+        # ── Reminders ──
+        card = self._group("Reminders")
+
+        self.interval_spin = QtWidgets.QSpinBox()
+        self.interval_spin.setRange(5, 240)
+        self.interval_spin.setSuffix(" min")
+        self.interval_spin.setMinimumWidth(112)
+        self.interval_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
+                                        QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._row(card, "Interval", self.interval_spin, first=True)
+
         self.snooze_spin = QtWidgets.QSpinBox()
         self.snooze_spin.setRange(5, 30)
-        self.snooze_spin.setSingleStep(1)
         self.snooze_spin.setSuffix(" min")
-        self.snooze_spin.setMinimumWidth(150)
-        self.snooze_spin.setStyleSheet(self.goal_spin.styleSheet())
-        form_layout.addRow("Snooze Duration:", self.snooze_spin)
-        
-        # Theme Selection
-        self.theme_combo = QtWidgets.QComboBox()
-        self.theme_combo.addItems(['Dark Glassmorphic', 'Wine Red', 'Forest Green', 'Ocean Blue', 'Sunset Orange', 'Midnight Blue'])
-        self.theme_combo.setMinimumWidth(150)
-        self.theme_combo.setStyleSheet("""
-            QComboBox {
-                padding: 6px 10px;
-                border: 2px solid #3C4043;
-                border-radius: 6px;
-                font-size: 13px;
-                background: #2B2B2B;
-                color: #E8EAED;
-            }
-            QComboBox:focus {
-                border-color: #5F6368; /* neutral focus */
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 30px;
-            }
-            QComboBox::down-arrow {
-                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQgNkw4IDEwTDEyIDYiIHN0cm9rZT0iIzlBQTBBNiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+);
-                width: 16px;
-                height: 16px;
-            }
-            /* Popup list view */
-            QComboBox QAbstractItemView {
-                background: #202124;
-                color: #E8EAED;
-                selection-background-color: #3A3B3F;
-                selection-color: #E8EAED;
-                border: 1px solid #3C4043;
-                outline: 0;
-            }
-        """)
-        form_layout.addRow("Theme:", self.theme_combo)
-        
-        # Display Mode Selection (Radio Buttons)
-        display_mode_widget = QtWidgets.QWidget()
-        display_mode_widget.setStyleSheet("QWidget { background: transparent; }")
-        display_mode_layout = QtWidgets.QHBoxLayout(display_mode_widget)
-        display_mode_layout.setContentsMargins(0, 0, 0, 0)
-        display_mode_layout.setSpacing(12)
-        
-        self.normal_mode_radio = QtWidgets.QRadioButton("Normal")
-        self.normal_mode_radio.setStyleSheet("""
-            QRadioButton {
-                font-size: 13px;
-                color: #E8EAED;
-                spacing: 8px;
-            }
-            QRadioButton::indicator {
-                width: 18px;
-                height: 18px;
-            }
-            QRadioButton::indicator:unchecked {
-                border: 2px solid #5F6368;
-                border-radius: 9px;
-                background: #2B2B2B;
-            }
-            QRadioButton::indicator:checked {
-                border: 2px solid #8AB4F8;
-                border-radius: 9px;
-                background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 #8AB4F8, stop:0.5 #8AB4F8, stop:0.51 transparent);
-            }
-        """)
-        
-        self.minimal_mode_radio = QtWidgets.QRadioButton("Minimal")
-        self.minimal_mode_radio.setStyleSheet(self.normal_mode_radio.styleSheet())
-        
-        # Set default checked
-        self.normal_mode_radio.setChecked(True)
-        
-        display_mode_layout.addWidget(self.normal_mode_radio)
-        display_mode_layout.addWidget(self.minimal_mode_radio)
-        display_mode_layout.addStretch()
-        
-        form_layout.addRow("Display Mode:", display_mode_widget)
-        
-        # Auto-launch checkbox
-        self.auto_launch_check = QtWidgets.QCheckBox("Launch on system startup")
-        self.auto_launch_check.setStyleSheet("""
-            QCheckBox {
-                font-size: 13px;
-                color: #E8EAED;
-                spacing: 8px; /* gap between box and text */
-                padding-left: 2px; /* ensure text not clipped */
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border: 2px solid #3C4043;
-                border-radius: 4px;
-                background: #2B2B2B;
-                margin-right: 8px;
-            }
-            QCheckBox::indicator:checked {
-                background: #E8EAED; /* neutral check */
-                border-color: #E8EAED;
-            }
-        """)
-        form_layout.addRow("Auto Launch:", self.auto_launch_check)
-        
-        # Sound enabled checkbox
-        self.sound_check = QtWidgets.QCheckBox("Enable reminder sounds")
-        self.sound_check.setStyleSheet(self.auto_launch_check.styleSheet())
-        form_layout.addRow("Sound:", self.sound_check)
-        
-        # Custom sound file picker
-        sound_file_widget = QtWidgets.QWidget()
-        sound_file_widget.setStyleSheet("QWidget { background: transparent; }")
-        sound_file_layout = QtWidgets.QHBoxLayout(sound_file_widget)
-        sound_file_layout.setContentsMargins(0, 0, 0, 0)
-        sound_file_layout.setSpacing(8)
-        
-        self.sound_path_label = QtWidgets.QLabel("Default")
-        self.sound_path_label.setStyleSheet("""
-            QLabel {
-                color: #9AA0A6;
-                font-size: 11px;
-                padding: 4px 8px;
-                background: transparent;
-            }
-        """)
-        self.sound_path_label.setMinimumWidth(120)
-        self.sound_path_label.setWordWrap(False)
-        self.sound_path_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
-        self.sound_path_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        
-        browse_btn = QtWidgets.QPushButton("Browse...")
-        browse_btn.setFixedHeight(28)
-        browse_btn.setGraphicsEffect(self._create_smooth_effect())
-        browse_btn.setStyleSheet("""
-            QPushButton {
-                padding: 4px 12px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 7px;
-                font-size: 11px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2D2F33, stop:1 #2B2B2B);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(95, 99, 104, 220);
-            }
-            QPushButton:pressed {
-                background: #242628;
-                border: 1px solid rgba(74, 77, 81, 180);
-            }
-        """)
-        browse_btn.clicked.connect(self._browse_sound_file)
-        
-        test_btn = QtWidgets.QPushButton("▶")
-        test_btn.setFixedSize(28, 28)
-        test_btn.setGraphicsEffect(self._create_smooth_effect())
-        test_btn.setStyleSheet("""
-            QPushButton {
-                padding: 0px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 7px;
-                font-size: 12px;
-                font-weight: bold;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2D2F33, stop:1 #2B2B2B);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(95, 99, 104, 220);
-            }
-            QPushButton:pressed {
-                background: #242628;
-            }
-        """)
-        test_btn.setToolTip("Test sound")
-        test_btn.clicked.connect(self._test_sound)
-        
-        self.loop_btn = QtWidgets.QPushButton("↻")
-        self.loop_btn.setFixedSize(28, 28)
-        self.loop_btn.setCheckable(True)
-        self.loop_btn.setGraphicsEffect(self._create_smooth_effect())
-        self.loop_btn.setStyleSheet("""
-            QPushButton {
-                padding: 0px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 7px;
-                font-size: 16px;
-                font-weight: bold;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2D2F33, stop:1 #2B2B2B);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(95, 99, 104, 220);
-            }
-            QPushButton:checked {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(138, 180, 248, 240);
-                color: #8AB4F8;
-            }
-            QPushButton:pressed {
-                background: #242628;
-            }
-        """)
-        self.loop_btn.setToolTip("Loop alert sound")
-        
-        clear_btn = QtWidgets.QPushButton("×")
-        clear_btn.setFixedSize(28, 28)
-        clear_btn.setGraphicsEffect(self._create_smooth_effect())
-        clear_btn.setStyleSheet("""
-            QPushButton {
-                padding: 0px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 7px;
-                font-size: 16px;
-                font-weight: bold;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2D2F33, stop:1 #2B2B2B);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,100,100,45), stop:1 rgba(255,100,100,35));
-                border: 1px solid rgba(232,71,71,180);
-            }
-            QPushButton:pressed {
-                background: rgba(255,100,100,55);
-            }
-        """)
-        clear_btn.setToolTip("Clear custom sound")
-        clear_btn.clicked.connect(self._clear_sound_file)
-        
-        sound_file_layout.addWidget(self.sound_path_label, 1)
-        sound_file_layout.addWidget(browse_btn, 0)
-        sound_file_layout.addWidget(test_btn, 0)
-        sound_file_layout.addWidget(self.loop_btn, 0)
-        sound_file_layout.addWidget(clear_btn, 0)
-        
-        form_layout.addRow("Custom Sound:", sound_file_widget)
-        
-        # Sleep Hours
-        sleep_hours_widget = QtWidgets.QWidget()
-        sleep_hours_widget.setStyleSheet("QWidget { background: transparent; }")
-        sleep_hours_layout = QtWidgets.QHBoxLayout(sleep_hours_widget)
-        sleep_hours_layout.setContentsMargins(0, 0, 0, 0)
-        sleep_hours_layout.setSpacing(8)
-        
+        self.snooze_spin.setMinimumWidth(112)
+        self.snooze_spin.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
+                                      QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self._row(card, "Snooze duration", self.snooze_spin)
+
+        sleep_widget = QtWidgets.QWidget()
+        sl = QtWidgets.QHBoxLayout(sleep_widget)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(6)
         self.sleep_start_spin = QtWidgets.QSpinBox()
         self.sleep_start_spin.setRange(0, 23)
         self.sleep_start_spin.setSuffix(":00")
-        self.sleep_start_spin.setMinimumWidth(70)
-        self.sleep_start_spin.setStyleSheet(self.goal_spin.styleSheet())
-        
-        sleep_to_label = QtWidgets.QLabel("to")
-        sleep_to_label.setStyleSheet("color: #9AA0A6; font-size: 11px; background: transparent;")
-        
+        self.sleep_start_spin.setMinimumWidth(78)
         self.sleep_end_spin = QtWidgets.QSpinBox()
         self.sleep_end_spin.setRange(0, 23)
         self.sleep_end_spin.setSuffix(":00")
-        self.sleep_end_spin.setMinimumWidth(70)
-        self.sleep_end_spin.setStyleSheet(self.goal_spin.styleSheet())
-        
-        sleep_hours_layout.addWidget(self.sleep_start_spin)
-        sleep_hours_layout.addWidget(sleep_to_label)
-        sleep_hours_layout.addWidget(self.sleep_end_spin)
-        sleep_hours_layout.addStretch()
-        
-        form_layout.addRow("Sleep Hours:", sleep_hours_widget)
-        
-        # Bedtime Warning
-        self.bedtime_warning_check = QtWidgets.QCheckBox("Remind before bedtime")
-        self.bedtime_warning_check.setStyleSheet(self.auto_launch_check.styleSheet())
-        form_layout.addRow("Bedtime Warning:", self.bedtime_warning_check)
-        
-        scroll_layout.addWidget(form_widget)
-        
-        # Goal Presets
-        presets_label = QtWidgets.QLabel("Quick Presets")
-        presets_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #E8EAED; margin: 1px 0px 0px 0px; padding: 0px; background: transparent;")
-        scroll_layout.addWidget(presets_label)
-        
-        presets_layout = QtWidgets.QHBoxLayout()
-        presets_layout.setSpacing(8)
-        
-        light_btn = QtWidgets.QPushButton("Light Activity\n2000ml")
-        light_btn.setMinimumHeight(50)
-        light_btn.setGraphicsEffect(self._create_smooth_effect())
-        light_btn.setStyleSheet("""
-            QPushButton {
-                padding: 8px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 8px;
-                font-size: 11px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2D2F33, stop:1 #2B2B2B);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(138, 180, 248, 240);
-            }
-            QPushButton:pressed {
-                background: #242628;
-            }
-        """)
-        light_btn.clicked.connect(lambda: self.goal_spin.setValue(2000))
-        
-        moderate_btn = QtWidgets.QPushButton("Moderate\n2500ml")
-        moderate_btn.setMinimumHeight(50)
-        moderate_btn.setGraphicsEffect(self._create_smooth_effect())
-        moderate_btn.setStyleSheet(light_btn.styleSheet())
-        moderate_btn.clicked.connect(lambda: self.goal_spin.setValue(2500))
-        
-        high_btn = QtWidgets.QPushButton("High Activity\n3000ml")
-        high_btn.setMinimumHeight(50)
-        high_btn.setGraphicsEffect(self._create_smooth_effect())
-        high_btn.setStyleSheet(light_btn.styleSheet())
-        high_btn.clicked.connect(lambda: self.goal_spin.setValue(3000))
-        
-        presets_layout.addWidget(light_btn)
-        presets_layout.addWidget(moderate_btn)
-        presets_layout.addWidget(high_btn)
-        
-        scroll_layout.addLayout(presets_layout)
-        
-        # Set scroll content and add to layout
-        scroll_area.setWidget(scroll_content)
-        layout.addWidget(scroll_area, 1)  # Add stretch factor to take available space
-        
-        # Buttons
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.setSpacing(8)
-        
-        cancel_btn = QtWidgets.QPushButton("Cancel")
-        cancel_btn.setMinimumHeight(32)
-        cancel_btn.setGraphicsEffect(self._create_smooth_effect())
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 18px;
-                border: 1px solid rgba(60, 64, 67, 200);
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #303134, stop:1 #2D2F33);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #3A3B3F);
-                border: 1px solid rgba(95, 99, 104, 220);
-            }
-            QPushButton:pressed {
-                background: #242628;
-                border: 1px solid rgba(95, 99, 104, 180);
-            }
-        """)
-        cancel_btn.clicked.connect(self.reject)
-        
-        save_btn = QtWidgets.QPushButton("Save Changes")
-        save_btn.setMinimumHeight(32)
-        save_btn.setGraphicsEffect(self._create_smooth_effect())
-        save_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 18px;
-                border: 1px solid rgba(74, 77, 81, 220);
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3C4043, stop:1 #303134);
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4A4D51, stop:1 #3C4043);
-                border: 1px solid rgba(95, 99, 104, 240);
-            }
-            QPushButton:pressed {
-                background: #202124;
-                border: 1px solid rgba(60, 64, 67, 200);
-            }
-        """)
-        save_btn.clicked.connect(self._save_settings)
-        
-        reset_btn = QtWidgets.QPushButton("Reset to Defaults")
-        reset_btn.setMinimumHeight(32)
-        reset_btn.setGraphicsEffect(self._create_smooth_effect())
-        reset_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 18px;
-                border: 1px solid rgba(232, 71, 71, 100);
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(232,71,71,30), stop:1 rgba(232,71,71,25));
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(232,71,71,55), stop:1 rgba(232,71,71,45));
-                border: 1px solid rgba(232, 71, 71, 150);
-            }
-            QPushButton:pressed {
-                background: rgba(232,71,71,65);
-                border: 1px solid rgba(232, 71, 71, 120);
-            }
-        """)
-        reset_btn.clicked.connect(self._reset_to_defaults)
-        
-        reset_water_btn = QtWidgets.QPushButton("Reset Water")
-        reset_water_btn.setMinimumHeight(32)
-        reset_water_btn.setGraphicsEffect(self._create_smooth_effect())
-        reset_water_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 18px;
-                border: 1px solid rgba(100, 150, 232, 100);
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(100,150,232,30), stop:1 rgba(100,150,232,25));
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(100,150,232,55), stop:1 rgba(100,150,232,45));
-                border: 1px solid rgba(100, 150, 232, 150);
-            }
-            QPushButton:pressed {
-                background: rgba(100,150,232,65);
-                border: 1px solid rgba(100, 150, 232, 120);
-            }
-        """)
-        reset_water_btn.clicked.connect(self._reset_water)
-        
-        button_layout.addWidget(reset_btn)
-        button_layout.addWidget(reset_water_btn)
-        button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(save_btn)
-        
-        layout.addLayout(button_layout)
-        
-        # Close HydraPing button (separate row)
-        close_layout = QtWidgets.QHBoxLayout()
-        close_layout.setContentsMargins(0, 8, 0, 0)
-        
-        close_app_btn = QtWidgets.QPushButton("Close HydraPing")
-        close_app_btn.setMinimumHeight(38)
-        close_app_btn.setGraphicsEffect(self._create_smooth_effect())
-        close_app_btn.setStyleSheet("""
-            QPushButton {
-                padding: 8px 20px;
-                border: 1px solid rgba(232, 71, 71, 120);
-                border-radius: 10px;
-                font-size: 14px;
-                font-weight: 600;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(232,71,71,35), stop:1 rgba(232,71,71,25));
-                color: #E8EAED;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(232,71,71,55), stop:1 rgba(232,71,71,45));
-                border: 1px solid rgba(232, 71, 71, 180);
-            }
-            QPushButton:pressed {
-                background: rgba(232,71,71,75);
-                border: 1px solid rgba(232, 71, 71, 150);
-            }
-        """)
-        close_app_btn.clicked.connect(self._terminate_app)
-        
-        close_layout.addWidget(close_app_btn)
-        layout.addLayout(close_layout)
+        self.sleep_end_spin.setMinimumWidth(78)
+        sleep_to = QtWidgets.QLabel("to")
+        sleep_to.setObjectName("rowHint")
+        sl.addWidget(self.sleep_start_spin)
+        sl.addWidget(sleep_to)
+        sl.addWidget(self.sleep_end_spin)
+        self._row(card, "Sleep hours", sleep_widget, "No reminders in this window")
 
-    def _apply_monochrome_style(self):
-        """Apply grayscale, dialog-scoped styling only to settings window.
-        Keeps app theme intact elsewhere.
-        """
-        self.setStyleSheet(self.styleSheet() + """
-            /* Dialog background */
-            QDialog {
-                background: #202124; /* Chrome dark */
-            }
-            /* Generic labels if not overridden */
-            QLabel { color: #E8EAED; }
-        """)
-        
+        self.bedtime_warning_check = ui_kit.ToggleSwitch()
+        self._row(card, "Bedtime warning", self.bedtime_warning_check,
+                  "Nudge before sleep hours")
+
+        # ── Sound ──
+        card = self._group("Sound")
+
+        self.sound_check = ui_kit.ToggleSwitch()
+        self._row(card, "Alert sound", self.sound_check, first=True)
+
+        sound_widget = QtWidgets.QWidget()
+        sw = QtWidgets.QHBoxLayout(sound_widget)
+        sw.setContentsMargins(0, 0, 0, 0)
+        sw.setSpacing(6)
+        browse_btn = QtWidgets.QPushButton("Browse")
+        browse_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._icon_buttons.append((browse_btn, 'folder'))
+        browse_btn.clicked.connect(self._browse_sound_file)
+        test_btn = self._icon_button('play', "Test sound")
+        test_btn.clicked.connect(self._test_sound)
+        self.loop_btn = self._icon_button('loop', "Loop alert sound", checkable=True)
+        clear_btn = self._icon_button('clear', "Clear custom sound")
+        clear_btn.clicked.connect(self._clear_sound_file)
+        for b in (browse_btn, test_btn, self.loop_btn, clear_btn):
+            sw.addWidget(b)
+
+        # The row's hint line doubles as the chosen-filename display, which is
+        # what _load_settings / _browse_sound_file / _save_settings read and write.
+        self._sound_row = self._row(card, "Custom file", sound_widget, "Default")
+        self.sound_path_label = self._sound_row.hint_label
+        self.sound_path_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+
+        # ── Appearance ──
+        card = self._group("Appearance")
+
+        self.theme_combo = QtWidgets.QComboBox()
+        self.theme_combo.addItems(ThemeManager().get_theme_names())
+        self.theme_combo.setMinimumWidth(168)
+        self.theme_combo.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.theme_combo.currentTextChanged.connect(self._preview_theme)
+        self._row(card, "Theme", self.theme_combo, first=True)
+
+        mode_widget = QtWidgets.QWidget()
+        ml = QtWidgets.QHBoxLayout(mode_widget)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(12)
+        self.normal_mode_radio = QtWidgets.QRadioButton("Normal")
+        self.minimal_mode_radio = QtWidgets.QRadioButton("Minimal")
+        self.normal_mode_radio.setChecked(True)
+        for r in (self.normal_mode_radio, self.minimal_mode_radio):
+            r.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            ml.addWidget(r)
+        self._row(card, "Display mode", mode_widget, "Bar or compact chip")
+
+        self.auto_launch_check = ui_kit.ToggleSwitch()
+        self._row(card, "Launch at startup", self.auto_launch_check,
+                  "Start with Windows")
+
+        # ── Danger zone ──
+        header = QtWidgets.QLabel("DANGER ZONE")
+        header.setObjectName("groupHeader")
+        self._content_layout.addWidget(header)
+        self._content_layout.addSpacing(4)
+
+        danger = QtWidgets.QFrame()
+        danger.setObjectName("dangerCard")
+        dl = QtWidgets.QHBoxLayout(danger)
+        dl.setContentsMargins(12, 10, 12, 10)
+        dl.setSpacing(8)
+        reset_btn = QtWidgets.QPushButton("Reset to Defaults")
+        reset_btn.clicked.connect(self._reset_to_defaults)
+        reset_water_btn = QtWidgets.QPushButton("Reset Water")
+        reset_water_btn.clicked.connect(self._reset_water)
+        close_app_btn = QtWidgets.QPushButton("Close HydraPing")
+        close_app_btn.clicked.connect(self._terminate_app)
+        for b, ic in ((reset_btn, 'reset'), (reset_water_btn, 'drop'),
+                      (close_app_btn, 'power')):
+            b.setObjectName("dangerButton")
+            b.setMinimumHeight(34)
+            b.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            # Expanding + equal stretch: the three actions share the full width
+            # instead of sitting at their label widths with dead space after.
+            b.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                            QtWidgets.QSizePolicy.Policy.Fixed)
+            self._icon_buttons.append((b, ic))
+            dl.addWidget(b, 1)
+        self._content_layout.addWidget(danger)
+
+        self._content_layout.addStretch(1)
+        self._scroll.setWidget(content)
+        root.addWidget(self._scroll, 1)
+
+        # ---- sticky footer -----------------------------------------------
+        self._footer = QtWidgets.QWidget()
+        # Named so the stylesheet can target it. An unscoped setStyleSheet() on
+        # this widget cascades its background onto the child buttons and wipes
+        # out their own fills.
+        self._footer.setObjectName("dialogFooter")
+        fl = QtWidgets.QHBoxLayout(self._footer)
+        fl.setContentsMargins(22, 12, 22, 12)
+        fl.setSpacing(8)
+        fl.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.setObjectName("ghostButton")
+        cancel_btn.setMinimumHeight(32)
+        cancel_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QtWidgets.QPushButton("Save Changes")
+        save_btn.setObjectName("primaryButton")
+        save_btn.setMinimumHeight(32)
+        save_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        save_btn.clicked.connect(self._save_settings)
+        fl.addWidget(cancel_btn)
+        fl.addWidget(save_btn)
+        root.addWidget(self._footer)
+
+    def _sync_preset_chips(self, value=None):
+        """Light up whichever preset matches the current goal."""
+        value = self.goal_spin.value() if value is None else value
+        for button, ml in getattr(self, '_preset_buttons', []):
+            button.setChecked(ml == value)
+
+    def _preview_theme(self, name):
+        """Restyle the dialog live when the theme dropdown changes."""
+        self._theme_name = name
+        self._apply_theme()
+
+    def _apply_theme(self):
+        """Apply the theme to the stylesheet, icons, scroll area and title bar."""
+        theme_manager = ThemeManager(self._theme_name)
+        palette = theme_manager.get_dialog_palette()
+
+        self.setStyleSheet(theme_manager.get_dialog_stylesheet())
+
+        self._subtitle.setText(f"{self._theme_name} \u00b7 "
+                               f"{self.goal_spin.value()} ml daily goal")
+
+        # (footer is styled via QWidget#dialogFooter in the dialog stylesheet)
+
+        self._scroll.set_colours(palette['surface'], palette['scroll_thumb'])
+
+        # ToggleSwitch paints itself, so it takes colours directly rather than QSS.
+        for toggle in (self.sound_check, self.bedtime_warning_check,
+                       self.auto_launch_check):
+            toggle.set_colours(palette['field'], palette['accent'],
+                               palette['text_faint'], palette['accent_ink'])
+
+        # Icons are rasterised per tint, so re-render them on every theme change.
+        icons.clear_cache()
+        dpr = self.devicePixelRatioF() or 1.0
+        for button, name in getattr(self, '_icon_buttons', []):
+            colour = QtGui.QColor(palette['danger_text']
+                                  if button.objectName() == "dangerButton"
+                                  else palette['text'])
+            button.setIcon(icons.icon(name, colour, 16, dpr))
+            button.setIconSize(QtCore.QSize(16, 16))
+
+        # Native title bar: QSS cannot reach the non-client area, so tint it
+        # through DWM instead. No-op below Windows 11 / off Windows.
+        window_chrome.apply_window_chrome(
+            self,
+            QtGui.QColor(palette['surface']),
+            QtGui.QColor(palette['text']))
+
+    def showEvent(self, event):
+        """Re-apply chrome: Qt can recreate the native handle, resetting it."""
+        super().showEvent(event)
+        palette = ThemeManager(self._theme_name).get_dialog_palette()
+        window_chrome.apply_window_chrome(
+            self,
+            QtGui.QColor(palette['surface']),
+            QtGui.QColor(palette['text']))
+
+
     def _browse_sound_file(self):
         """Open file dialog to select custom sound file"""
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(

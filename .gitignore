@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# PyInstaller / Build Artifacts
+build/
+dist/
+*.manifest
+*.spec.bak
+
+# Local Databases & Logs
+*.db
+*.sqlite
+*.sqlite3
+hydration.db
+logs/
+*.log
+
+# IDE & Editor specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp

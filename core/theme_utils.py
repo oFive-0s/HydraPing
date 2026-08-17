@@ -1,4 +1,4 @@
-"""
+﻿"""
 Theme utilities for HydraPing.
 Provides helpers for applying themes dynamically.
 """
@@ -66,7 +66,7 @@ def get_dashboard_qss(theme_config):
     QWidget {{
         background-color: {theme_config.get('bg')};
         color: {theme_config.get('text_primary')};
-        font-family: 'Segoe UI', 'SF Pro Display', system-ui, sans-serif;
+        font-family: 'Poppins', 'Segoe UI', sans-serif;
     }}
     
     QScrollBar:vertical {{

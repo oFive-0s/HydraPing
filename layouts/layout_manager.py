@@ -149,44 +149,31 @@ class LayoutManager:
         self._update_shape_border_radius()
     
     def _update_shape_border_radius(self):
-        """Update container/bg_box border-radius to match current shape for smooth edges"""
+        """Keep the container/hover frames purely transparent layout hosts.
+
+        These two frames used to carry their own rounded backgrounds and 1px
+        borders, re-applied here on every layout change -- which silently
+        overrode whatever ThemeManager returned.  Combined with the stroke drawn
+        in OverlayWindow.paintEvent that put three separately-rasterised rounded
+        rects on the same geometry, and their antialiased corners never lined up.
+        The glass surface (fill, rim, sheen) is now painted once in paintEvent,
+        and the shape follows from _window_shape there.
+        """
         config = self.current_config
         if not config:
             return
 
-        if config.window_shape == "square":
-            container_radius = 8
-            bg_radius = 9
-        else:
-            container_radius = 12
-            bg_radius = 14
+        if not hasattr(self.window, 'theme_manager'):
+            return
 
-        if hasattr(self.window, '_container') and hasattr(self.window, 'theme_manager'):
-            theme = self.window.theme_manager.get_theme()
-            self.window._container.setStyleSheet(f"""
-                #overlayContainer {{
-                    background: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 {theme['overlay_bg_start']},
-                        stop:1 {theme['overlay_bg_end']}
-                    );
-                    border-radius: {container_radius}px;
-                    border: 1px solid {theme['overlay_border']};
-                }}
-            """)
-        if hasattr(self.window, '_bg_box') and hasattr(self.window, 'theme_manager'):
-            theme = self.window.theme_manager.get_theme()
-            self.window._bg_box.setStyleSheet(f"""
-                #hoverBackground {{
-                    background: qlineargradient(
-                        x1:0, y1:0, x2:1, y2:1,
-                        stop:0 {theme['hover_bg_start']},
-                        stop:1 {theme['hover_bg_end']}
-                    );
-                    border-radius: {bg_radius}px;
-                    border: 1px solid {theme['hover_border']};
-                }}
-            """)
+        stylesheet = self.window.theme_manager.get_overlay_stylesheet()
+        for attr in ('_container', '_bg_box'):
+            if hasattr(self.window, attr):
+                getattr(self.window, attr).setStyleSheet(stylesheet)
+
+        # paintEvent keys its corner radius off the window shape, so a repaint is
+        # all that is needed to pick up a rectangular <-> circular switch.
+        self.window.update()
 
     def set_alert_mode(self, is_alert: bool):
         """Handle alert mode transitions"""

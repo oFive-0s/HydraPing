@@ -1,0 +1,365 @@
+<title>HydraPing Settings Preview</title>
+<style>
+  :root{--ink:#e8eaed;--dim:#9aa0a6;--hair:rgba(255,255,255,.10);--panel:rgba(255,255,255,.04)}
+  *{box-sizing:border-box}
+  body{margin:0;padding:0 0 70px;background:#0b0d10;color:var(--ink);
+       font:14px/1.5 'Poppins',-apple-system,'Segoe UI',sans-serif}
+  header{position:sticky;top:0;z-index:10;padding:16px 28px;backdrop-filter:blur(20px);
+         background:rgba(11,13,16,.85);border-bottom:1px solid var(--hair);
+         display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-.2px}
+  h1 span{color:var(--dim);font-weight:400}
+  .ctl{display:flex;gap:6px;align-items:center}
+  .ctl label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.7px}
+  select.seg,button.seg{font:inherit;font-size:11px;padding:5px 11px;cursor:pointer;color:var(--dim);
+        background:var(--panel);border:1px solid var(--hair);border-radius:7px}
+  button.seg[aria-pressed="true"]{background:rgba(138,180,248,.18);color:#c6dcff;border-color:rgba(138,180,248,.35)}
+
+  main{padding:26px 28px;display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;gap:10px}
+  .cap{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:rgba(255,255,255,.42)}
+  .cap b{color:rgba(255,255,255,.85);font-weight:600}
+
+  /* ══ the dialog, 525×650 at 1:1 ══ */
+  .dlg{width:525px;height:650px;border-radius:12px;overflow:hidden;position:relative;
+       display:flex;flex-direction:column;font-family:'Poppins','Segoe UI',sans-serif}
+
+  /* ── NOW: fixed Google-Material palette, hardcoded ~40× ── */
+  .now{background:#202124;border:1px solid #3C4043}
+  .now .ttl,.now .form,.now .foot,.now .sep{margin-left:20px;margin-right:20px}
+  .now .ttl{margin-top:16px}
+  .now .ttl{font-size:17px;font-weight:700;color:#E8EAED;letter-spacing:-.2px;padding-bottom:2px}
+  .now .sep{height:1px;background:#303134;margin:8px 0 10px}
+  .now .form{flex:1;overflow-y:auto;padding:14px;background:#202124;border-radius:8px}
+  .now .row{display:grid;grid-template-columns:118px 1fr;gap:16px;align-items:center;margin-bottom:12px}
+  .now .lbl{font-size:12px;color:#9AA0A6;font-weight:500;text-align:right}
+  .now input,.now .fld{background:#292A2D;color:#E8EAED;border:1.5px solid #3C4043;border-radius:7px;
+        padding:7px 9px;font:500 12px 'Poppins',sans-serif;min-height:30px;width:100%}
+  .now .btn{background:#292A2D;color:#BDC1C6;border:1px solid #3C4043;border-radius:6px;
+        padding:7px 12px;font:600 11px 'Poppins',sans-serif;cursor:default}
+  .now .btn.icon{width:34px;text-align:center;padding:7px 0}
+  .now .foot{display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;border-top:1px solid #303134;margin-top:10px}
+  .now .btn.primary{background:rgba(138,180,248,.18);color:#8AB4F8;border-color:rgba(138,180,248,.6)}
+  .now .btn.danger{color:#E8A9A9;border-color:rgba(232,71,71,.35)}
+  .now .chk{width:16px;height:16px;border:1.5px solid #5F6368;border-radius:4px;background:#292A2D;
+        display:inline-block;vertical-align:middle}
+  .now .chk.on{background:#8AB4F8;border-color:#8AB4F8}
+  .now .rad{width:16px;height:16px;border:1.5px solid #5F6368;border-radius:8px;background:#292A2D;
+        display:inline-block;vertical-align:middle}
+  .now .rad.on{border-color:#8AB4F8;background:radial-gradient(circle at 50% 50%,#8AB4F8 0 45%,transparent 46%)}
+
+  /* ── PROPOSED: solid theme-tinted surface, grouped, custom scrolling ── */
+  /* No perimeter rim. This is a native window, not a frameless glass panel:
+     Windows already draws its edge, and DWMWA_BORDER_COLOR tints that edge to
+     the theme. Adding a QSS/CSS rim on top would put two strokes on the same
+     perimeter -- the exact stacking that made the overlay look outlined. The
+     drop shadow below is only so the window reads against this preview page;
+     on the desktop the real window shadow does that job. */
+  .new{background:var(--surf-a);   /* flat solid, fully opaque */
+       box-shadow:0 8px 30px rgba(0,0,0,.22)}
+  /* Native Windows title bar, tinted via DWM (DWMWA_CAPTION_COLOR / _TEXT_COLOR
+     / _BORDER_COLOR). Not a frameless imitation - the real caption, so Snap
+     Layouts, drag, double-click-maximise and the system menu all still work. */
+  .titlebar{height:32px;display:flex;align-items:center;padding:0 0 0 12px;gap:8px;
+        background:var(--cap);color:var(--cap-txt);flex:0 0 auto;position:relative;z-index:6}
+  .titlebar .tb-name{font-size:11.5px;font-weight:500;flex:1;letter-spacing:.1px}
+  .titlebar .tb-ico{width:14px;height:14px;border-radius:3px;background:var(--accent)}
+  .titlebar .tb-btns{display:flex;height:100%}
+  .titlebar .tb-btns span{width:44px;display:grid;place-items:center;font-size:10px;
+        font-family:'Segoe UI',sans-serif;opacity:.85}
+  .titlebar .tb-btns span.x:hover{background:#c42b1c;color:#fff}
+  .now .titlebar{background:#2b2b2b;color:#fff}   /* what Windows draws by default */
+
+  .new .hd{padding:16px 22px 10px;position:relative;z-index:3;background:var(--surf-a)}
+  .new .ttl{font-size:17px;font-weight:700;color:var(--txt);letter-spacing:-.3px}
+  .new .sub{font-size:11px;color:var(--txt-dim);margin-top:2px}
+
+  /* scroll region: fade masks top+bottom instead of a hard cut */
+  .new .scroll{flex:1;position:relative;min-height:0}
+  .new .scroll::before,.new .scroll::after{content:'';position:absolute;left:0;right:0;height:20px;
+        pointer-events:none;z-index:4;opacity:0;transition:opacity .18s ease}
+  .new .scroll::before{top:0;background:linear-gradient(var(--surf-a),transparent)}
+  .new .scroll::after{bottom:0;background:linear-gradient(transparent,var(--surf-a))}
+  .new .scroll[data-top="1"]::before{opacity:1}
+  .new .scroll[data-bot="1"]::after{opacity:1}
+  .new .body{height:100%;overflow-y:auto;padding:6px 22px 10px;scroll-behavior:smooth;
+        scrollbar-width:none}
+  .new .body::-webkit-scrollbar{width:0;height:0}
+  /* slim overlay scrollbar, only while scrolling or hovering */
+  .new .sbar{position:absolute;top:4px;bottom:4px;right:5px;width:4px;border-radius:2px;
+        background:rgba(var(--hi),.30);opacity:0;transition:opacity .25s ease;z-index:6;
+        pointer-events:none}
+  .new .scroll:hover .sbar,.new .scroll[data-scrolling="1"] .sbar{opacity:1}
+
+  .new .grp{margin-bottom:14px}
+  /* sticky group header: you always know which section you're in */
+  .new .gh{font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--txt-faint);
+        font-weight:600;margin:0 0 6px;display:flex;align-items:center;gap:8px;
+        position:sticky;top:-6px;background:var(--surf-a);padding:6px 0 4px;z-index:2}
+  .new .gh::after{content:'';flex:1;height:1px;background:rgba(var(--hi),.09)}
+  .new .card{background:rgba(var(--hi),.045);border-radius:10px;padding:2px 12px}
+  .new .row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
+        padding:7px 0;border-bottom:1px solid rgba(var(--hi),.06)}
+  .new .row:last-child{border-bottom:none}
+  .new .lbl{font-size:12px;color:var(--txt);font-weight:500}
+  .new .hint{font-size:10px;color:var(--txt-faint);margin-top:1px}
+  /* inputs: no hard border — recessed fill + accent focus rim */
+  .new input,.new .fld{background:rgba(0,0,0,.22);color:var(--txt);border:none;border-radius:7px;
+        padding:6px 10px;font:600 12px 'Poppins',sans-serif;text-align:right;width:104px;
+        box-shadow:inset 0 1px 0 rgba(var(--hi),.07)}
+  .new .fld.focus{box-shadow:inset 0 1px 0 rgba(var(--hi),.07),0 0 0 2px var(--accent-soft)}
+  /* Buttons are flat solid fills - no gradient. */
+  .new .btn{background:var(--btn);color:var(--txt);border:none;border-radius:8px;
+        padding:7px 13px;font:600 11px 'Poppins',sans-serif;cursor:default;
+        display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .new .btn:hover{background:var(--btn-hover)}
+  .new .btn.icon{width:32px;padding:7px 0}
+  .new .btn.primary{background:var(--accent);color:var(--accent-ink)}
+  .new .btn.ghost{background:transparent;color:var(--txt-dim)}
+  .new .btn.danger{background:var(--dz);color:var(--dz-txt)}
+  .new .ico{flex:0 0 auto;display:block}
+  .new .foot{display:flex;gap:8px;align-items:center;padding:12px 22px;
+        background:rgba(0,0,0,.20);border-top:1px solid rgba(var(--hi),.07)}
+  .new .chips{display:flex;gap:6px}
+  .new .chip{background:rgba(var(--hi),.07);border-radius:7px;padding:6px 10px;
+        font:600 10.5px 'Poppins',sans-serif;color:var(--txt-dim);text-align:center;line-height:1.3}
+  .new .chip.on{background:var(--accent-soft);color:var(--txt)}
+  .new .chip small{display:block;font-size:9px;opacity:.7;font-weight:500}
+  .new .sw{width:34px;height:19px;border-radius:10px;background:rgba(0,0,0,.3);position:relative;
+        box-shadow:inset 0 1px 0 rgba(var(--hi),.06)}
+  .new .sw::after{content:'';position:absolute;top:2.5px;left:2.5px;width:14px;height:14px;
+        border-radius:7px;background:rgba(var(--hi),.45)}
+  .new .sw.on{background:var(--accent)}
+  .new .sw.on::after{left:17.5px;background:var(--accent-ink)}
+  .new .seg2{display:flex;background:rgba(0,0,0,.22);border-radius:8px;padding:2px}
+  .new .seg2 span{padding:5px 12px;border-radius:6px;font:600 11px 'Poppins',sans-serif;color:var(--txt-dim)}
+  .new .seg2 span.on{background:rgba(var(--hi),.14);color:var(--txt)}
+  .new .danger-zone{background:rgba(232,71,71,.07);border-radius:10px;padding:10px 12px}
+  /* Danger actions span the full width and share it equally, rather than
+     sitting at their intrinsic label widths with dead space to the right.
+     auto-fit + minmax(0,1fr) means they re-flow if the dialog is ever resized.
+     Qt equivalent: QHBoxLayout with stretch 1 and QSizePolicy.Expanding. */
+  .new .danger-actions{display:grid;gap:8px;
+        grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+  .new .danger-actions .btn{width:100%;padding:8px 6px;white-space:nowrap;
+        overflow:hidden;text-overflow:ellipsis}
+
+  .notes{margin:26px 28px 0;padding:20px 24px;border-radius:14px;background:var(--panel);
+         border:1px solid var(--hair);max-width:980px}
+  .notes h2{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+  .notes h2:not(:first-child){margin-top:18px}
+  .notes ul{margin:0;padding-left:18px}.notes li{margin-bottom:8px;font-size:13px;color:#c8ccd2}
+  .notes code{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#8ab4f8}
+</style>
+
+<header>
+  <h1>HydraPing settings <span>— 525×650, 1:1</span></h1>
+  <div class="ctl"><label>Theme</label>
+    <select class="seg" id="theme"></select></div>
+  <div class="ctl"><label>Show</label>
+    <button class="seg" data-show="both" aria-pressed="true">Both</button>
+    <button class="seg" data-show="new" aria-pressed="false">Proposed only</button></div>
+</header>
+
+<main id="out"></main>
+
+<div class="notes">
+  <h2>The core problem</h2>
+  <ul>
+    <li><b>The dialog ignores the theme system entirely.</b> It hardcodes a fixed Google-Material palette — <code>#202124</code>, <code>#E8EAED</code>, <code>#9AA0A6</code>, <code>#3C4043</code>, <code>#8AB4F8</code> — across roughly 40 inline stylesheets. Pick Wine Red or Forest Green and the overlay changes; this window does not.</li>
+    <li><b><code>ThemeManager.get_dialog_stylesheet()</code> already exists and nothing calls it.</b> It is defined once and referenced nowhere else in the project. (The caching bug I fixed in it was therefore in dead code — it only starts mattering once the dialog is actually bound to the theme.)</li>
+    <li><b>Every input carries a hard <code>1.5px solid #3C4043</code> border</b> — thirteen of them stacked down the form. This is the same "outlined" quality you flagged on the overlay, and the fix is the same: recess the field instead of ringing it.</li>
+  </ul>
+  <h2>What the proposed pass changes</h2>
+  <ul>
+    <li><b>Bound to the theme.</b> Surfaces, text and accent all derive from the active theme, so the dialog matches the overlay it configures. Switch themes in the header to see it move.</li>
+    <li><b>Grouped, not one flat list.</b> Thirteen equally-weighted rows in a single <code>QFormLayout</code> become five labelled groups. Nothing is added or removed — every control is still here.</li>
+    <li><b>Borderless fields.</b> Recessed fill plus an inset top highlight; focus is shown with an accent ring rather than a permanent outline.</li>
+    <li><b>Destructive actions quarantined.</b> "Reset to Defaults", "Reset Water" and "Close HydraPing" currently sit in the same footer row as Save, styled almost identically. They move to a tinted danger zone at the bottom.</li>
+    <li><b>Sticky footer.</b> Cancel/Save leave the scroll area, so they're reachable without scrolling to the end.</li>
+    <li><b>Toggles instead of checkboxes</b> for the three on/off settings, and a segmented control for Display Mode — the radio pair reads as a form field for something that's really a two-state choice.</li>
+  </ul>
+  <h2>Scrolling — what replaces the Qt default</h2>
+  <ul>
+    <li><b>Eased wheel scrolling.</b> <code>QScrollArea</code> jumps ~3 lines per notch instantly, which is what makes a long settings pane feel cheap. An event filter on the viewport intercepts the wheel and drives <code>verticalScrollBar().value</code> through a ~180 ms <code>OutCubic</code> animation, accumulating delta so fast flicks stay responsive.</li>
+    <li><b>Edge fades instead of a hard cut.</b> A 20px gradient at the top and bottom, each shown only when there is actually content past that edge — so the pane reads as continuing rather than being sliced. Drawn over the viewport in <code>paintEvent</code>.</li>
+    <li><b>Slim auto-hiding thumb.</b> 4px, sized to the viewport/content ratio, fading in on scroll or hover and out after ~700 ms idle. The current bar is a permanent 5px strip at <code>rgba(95,99,104,140)</code>.</li>
+    <li><b>Sticky group headers</b> so you always know which section you're in. Free in CSS; in Qt this needs either a re-parented header widget above the viewport or a paint-time overlay. This is the one item with real implementation cost — say if you'd rather skip it.</li>
+    <li><b>Less to scroll.</b> Trimmed the redundant hints and tightened row padding, cutting content height substantially versus the first draft. Exact numbers measured in the browser and reported in chat.</li>
+  </ul>
+  <h2>Still your call</h2>
+  <ul>
+    <li>Whether the light themes should give this window a genuinely <b>light</b> surface, or keep a dark dialog with light-theme accents. Shown here following the theme fully — pick Light Overlay to judge it.</li>
+  </ul>
+</div>
+
+<script>
+const THEMES={
+ 'Light Glassmorphic':{hi:'255,255,255',lo:'0,0,0',surf:['#f2f3f5','#e7e9ec'],txt:'#17181a',dim:'#5c6066',faint:'#83888f',acc:'#3b6fd4',accDim:'#2f5cb8',accInk:'#fff',accSoft:'rgba(59,111,212,.20)',btn:'#e4e7eb',btnHover:'#d8dce1',dz:'#f4d9d9',dtxt:'#b3261e'},
+ 'Dark Glassmorphic':{hi:'255,255,255',lo:'255,255,255',surf:['#23262b','#1a1d21'],txt:'#e8eaed',dim:'#a8adb5',faint:'#7d838b',acc:'#8AB4F8',accDim:'#6f9de6',accInk:'#10233f',accSoft:'rgba(138,180,248,.22)',btn:'#2f333a',btnHover:'#3a3f47',dz:'#3d2a2c',dtxt:'#f0a6a6'},
+ 'Wine Red':{hi:'255,205,205',lo:'120,0,0',surf:['#33191b','#241012'],txt:'#f6e7e7',dim:'#c9a5a5',faint:'#a37f7f',acc:'#E4737A',accDim:'#c85a62',accInk:'#2a0d10',accSoft:'rgba(228,115,122,.22)',btn:'#422427',btnHover:'#4f2d31',dz:'#4d2529',dtxt:'#f2b0b0'},
+ 'Forest Green':{hi:'220,255,225',lo:'20,70,25',surf:['#1b2a1d','#121d14'],txt:'#e6f5e8',dim:'#a6c4aa',faint:'#7f9c84',acc:'#81C784',accDim:'#66ab6a',accInk:'#0d1f10',accSoft:'rgba(129,199,132,.22)',btn:'#253627',btnHover:'#2e4130',dz:'#3b2726',dtxt:'#f0b3b0'},
+ 'Ocean Blue':{hi:'215,240,255',lo:'10,50,100',surf:['#17293a','#0f1d2b'],txt:'#e4f1fb',dim:'#a2bdd2',faint:'#7b95aa',acc:'#64B5F6',accDim:'#4b9ad9',accInk:'#08243c',accSoft:'rgba(100,181,246,.22)',btn:'#203548',btnHover:'#294056',dz:'#3a262c',dtxt:'#f2b0b0'},
+ 'Sunset Orange':{hi:'255,235,205',lo:'150,60,10',surf:['#342414','#241809'],txt:'#faeede',dim:'#ccb096',faint:'#a48a72',acc:'#FFB74D',accDim:'#e09b34',accInk:'#301c05',accSoft:'rgba(255,183,77,.22)',btn:'#43301c',btnHover:'#503a23',dz:'#452725',dtxt:'#f5b6ad'},
+ 'Light Overlay':{hi:'255,255,255',lo:'120,120,120',surf:['#fafbfc','#eef0f3'],txt:'#212121',dim:'#5f6368',faint:'#8a8f95',acc:'#1a73e8',accDim:'#1560c8',accInk:'#fff',accSoft:'rgba(26,115,232,.18)',btn:'#eaedf0',btnHover:'#dee2e7',dz:'#f7dada',dtxt:'#b3261e'},
+ 'Midnight Blue':{hi:'200,220,255',lo:'10,20,45',surf:['#182236','#0d1524'],txt:'#e7edfa',dim:'#a3b0c8',faint:'#7c8aa3',acc:'#6C8FE8',accDim:'#5375cc',accInk:'#0a1226',accSoft:'rgba(108,143,232,.22)',btn:'#222e45',btnHover:'#2b3952',dz:'#382636',dtxt:'#f0adba'},
+};
+
+/* 16x16 icon set, stroke-based on currentColor so it recolours with the theme.
+   Replaces the text glyphs the dialog uses today (▶ ↻ ×), which depend on the
+   font having those codepoints and cannot be weighted or aligned properly. */
+const ICON={
+ play:'<path d="M6 4.2 12.2 8 6 11.8Z" fill="currentColor" stroke="none"/>',
+ loop:'<path d="M4 7.2V6.6A2.1 2.1 0 0 1 6.1 4.5h5.2"/><path d="m9.6 2.9 1.8 1.6-1.8 1.6"/>'+
+      '<path d="M12 8.8v.6a2.1 2.1 0 0 1-2.1 2.1H4.7"/><path d="m6.4 13.1-1.8-1.6 1.8-1.6"/>',
+ clear:'<path d="m5.2 5.2 5.6 5.6M10.8 5.2l-5.6 5.6"/>',
+ folder:'<path d="M2.2 5.6a1 1 0 0 1 1-1h2.4l1.2 1.5h5.9a1 1 0 0 1 1 1v4.7a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1Z"/>',
+ reset:'<path d="M3.4 8a4.6 4.6 0 1 0 1.5-3.4"/><path d="M3.1 3.2v2.6h2.6"/>',
+ drop:'<path d="M8 2.4c0 0-3.7 4.2-3.7 6.6a3.7 3.7 0 0 0 7.4 0C11.7 6.6 8 2.4 8 2.4Z"/>',
+ power:'<path d="M8 2.6v4.8"/><path d="M5.1 4.7a4.4 4.4 0 1 0 5.8 0"/>',
+};
+function ico(name,size){size=size||16;return `<svg class="ico" width="${size}" height="${size}"
+  viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+  stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;}
+
+const sel=document.getElementById('theme');
+sel.innerHTML=Object.keys(THEMES).map(n=>`<option${n==='Dark Glassmorphic'?' selected':''}>${n}</option>`).join('');
+
+function nowDialog(){return `<div class="dlg now">
+  <div class="titlebar"><span class="tb-ico"></span><span class="tb-name">HydraPing Settings</span><span class="tb-btns"><span>&#8210;</span><span>&#9723;</span><span class="x">&#10005;</span></span></div>
+  <div class="ttl">Settings</div><div class="sep"></div>
+  <div class="form">
+    <div class="row"><div class="lbl">Daily Goal:</div><div class="fld">2000 ml</div></div>
+    <div class="row"><div class="lbl">Reminder Interval:</div><div class="fld">45 min</div></div>
+    <div class="row"><div class="lbl">Default Sip Size:</div><div class="fld">250 ml</div></div>
+    <div class="row"><div class="lbl">Snooze Duration:</div><div class="fld">10 min</div></div>
+    <div class="row"><div class="lbl">Theme:</div><div class="fld">Dark Glassmorphic ▾</div></div>
+    <div class="row"><div class="lbl">Display Mode:</div>
+      <div style="font-size:11px;color:#E8EAED"><span class="rad on"></span> Normal
+        &nbsp;&nbsp;<span class="rad"></span> Minimal</div></div>
+    <div class="row"><div class="lbl">Auto Launch:</div><div><span class="chk on"></span></div></div>
+    <div class="row"><div class="lbl">Sound:</div><div><span class="chk on"></span></div></div>
+    <div class="row"><div class="lbl">Custom Sound:</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:11px;color:#BDC1C6;flex:1">Default</span>
+        <span class="btn">Browse</span><span class="btn icon">▶</span>
+        <span class="btn icon">↻</span><span class="btn icon">×</span></div></div>
+    <div class="row"><div class="lbl">Sleep Hours:</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div class="fld" style="width:76px">22:00</div>
+        <span style="color:#5F6368;font-size:11px">to</span>
+        <div class="fld" style="width:76px">7:00</div></div></div>
+    <div class="row"><div class="lbl">Bedtime Warning:</div>
+      <div style="font-size:11px;color:#E8EAED"><span class="chk on"></span> Remind before bedtime</div></div>
+    <div class="sep"></div>
+    <div style="font-size:12px;color:#9AA0A6;font-weight:600;margin:4px 0 8px">Quick Presets</div>
+    <div style="display:flex;gap:8px">
+      <span class="btn" style="flex:1;text-align:center">Light Activity<br>2000ml</span>
+      <span class="btn" style="flex:1;text-align:center">Moderate<br>2500ml</span>
+      <span class="btn" style="flex:1;text-align:center">High Activity<br>3000ml</span></div>
+  </div>
+  <div class="foot">
+    <span class="btn">Cancel</span><span class="btn primary">Save Changes</span>
+    <span class="btn danger">Reset to Defaults</span><span class="btn danger">Reset Water</span>
+    <span class="btn danger">Close HydraPing</span></div>
+</div>`;}
+
+function newDialog(name){return `<div class="dlg new">
+  <div class="titlebar"><span class="tb-ico"></span><span class="tb-name">HydraPing Settings</span><span class="tb-btns"><span>&#8210;</span><span>&#9723;</span><span class="x">&#10005;</span></span></div>
+  <div class="hd"><div class="ttl">Settings</div>
+    <div class="sub">${name} &middot; 2000 ml daily goal</div></div>
+  <div class="scroll"><div class="sbar"></div><div class="body">
+    <div class="grp"><p class="gh">Hydration</p><div class="card">
+      <div class="row"><div class="lbl">Daily goal</div>
+        <div class="fld">2000 ml</div></div>
+      <div class="row"><div class="lbl">Default sip size</div>
+        <div class="fld">250 ml</div></div>
+      <div class="row"><div class="lbl">Quick presets</div>
+        <div class="chips"><span class="chip on">Light<small>2000ml</small></span>
+          <span class="chip">Moderate<small>2500ml</small></span>
+          <span class="chip">High<small>3000ml</small></span></div></div>
+    </div></div>
+
+    <div class="grp"><p class="gh">Reminders</p><div class="card">
+      <div class="row"><div class="lbl">Interval</div><div class="fld focus">45 min</div></div>
+      <div class="row"><div class="lbl">Snooze duration</div><div class="fld">10 min</div></div>
+      <div class="row"><div><div class="lbl">Sleep hours</div><div class="hint">No reminders in this window</div></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div class="fld" style="width:66px">22:00</div>
+          <span style="color:var(--txt-faint);font-size:11px">to</span>
+          <div class="fld" style="width:66px">7:00</div></div></div>
+      <div class="row"><div class="lbl">Bedtime warning</div>
+        <div class="sw on"></div></div>
+    </div></div>
+
+    <div class="grp"><p class="gh">Sound</p><div class="card">
+      <div class="row"><div class="lbl">Alert sound</div><div class="sw on"></div></div>
+      <div class="row"><div><div class="lbl">Custom file</div><div class="hint">Default</div></div>
+        <div style="display:flex;gap:6px"><span class="btn">${ico('folder',14)}Browse</span>
+          <span class="btn icon" title="Test">${ico('play')}</span>
+          <span class="btn icon" title="Loop">${ico('loop')}</span>
+          <span class="btn icon" title="Clear">${ico('clear')}</span></div></div>
+    </div></div>
+
+    <div class="grp"><p class="gh">Appearance</p><div class="card">
+      <div class="row"><div class="lbl">Theme</div><div class="fld" style="width:150px">${name} ▾</div></div>
+      <div class="row"><div class="lbl">Display mode</div>
+        <div class="seg2"><span class="on">Normal</span><span>Minimal</span></div></div>
+      <div class="row"><div><div class="lbl">Launch at startup</div><div class="hint">Start with Windows</div></div>
+        <div class="sw on"></div></div>
+    </div></div>
+
+    <div class="grp"><p class="gh">Danger zone</p><div class="danger-zone">
+      <div class="danger-actions">
+        <span class="btn danger">${ico('reset',14)}Reset to Defaults</span>
+        <span class="btn danger">${ico('drop',14)}Reset Water</span>
+        <span class="btn danger">${ico('power',14)}Close HydraPing</span></div></div></div>
+  </div></div>
+  <div class="foot"><span style="flex:1"></span>
+    <span class="btn ghost">Cancel</span><span class="btn primary">Save Changes</span></div>
+</div>`;}
+
+function render(){
+  const name=sel.value,k=THEMES[name];
+  const show=document.querySelector('[data-show][aria-pressed="true"]').dataset.show;
+  const vars=`--hi:${k.hi};--lo:${k.lo};--surf-a:${k.surf[0]};--surf-b:${k.surf[1]};
+    --txt:${k.txt};--txt-dim:${k.dim};--txt-faint:${k.faint};--accent:${k.acc};
+    --accent-dim:${k.accDim};--accent-ink:${k.accInk};--accent-soft:${k.accSoft};--btn:${k.btn};--btn-hover:${k.btnHover};--dz:${k.dz};--dz-txt:${k.dtxt};--cap:${k.surf[0]};--cap-txt:${k.txt};`;
+  document.getElementById('out').innerHTML=
+    (show==='both'?`<div class="col"><span class="cap">Now — <b>fixed palette, 13 flat rows</b></span>${nowDialog()}</div>`:'')+
+    `<div class="col" style="${vars}"><span class="cap">Proposed — <b>theme-bound, grouped</b></span>${newDialog(name)}</div>`;
+}
+/* Scroll behaviour the Qt side has to reproduce:
+   1. fade masks appear only when there is content past that edge
+   2. slim thumb, sized to the viewport/content ratio, auto-hidden when idle
+   3. sticky group headers (CSS position:sticky here; QScrollArea needs a
+      re-parented header widget or a paint-time overlay)
+   4. eased wheel scrolling rather than Qt's instant 3-line jump         */
+function wireScroll(){
+  document.querySelectorAll('.new .scroll').forEach(sc=>{
+    const body=sc.querySelector('.body'), bar=sc.querySelector('.sbar');
+    let idle;
+    const sync=()=>{
+      const max=body.scrollHeight-body.clientHeight;
+      sc.dataset.top = body.scrollTop>2 ? '1':'0';
+      sc.dataset.bot = body.scrollTop<max-2 ? '1':'0';
+      const track=sc.clientHeight-8;
+      const h=Math.max(28, track*body.clientHeight/body.scrollHeight);
+      bar.style.height=h+'px';
+      bar.style.top=(4+(max?(track-h)*body.scrollTop/max:0))+'px';
+      bar.style.bottom='auto';
+    };
+    body.addEventListener('scroll',()=>{
+      sync(); sc.dataset.scrolling='1';
+      clearTimeout(idle); idle=setTimeout(()=>sc.dataset.scrolling='0',700);
+    });
+    sync();
+  });
+}
+function renderAll(){render();wireScroll();}
+sel.addEventListener('change',renderAll);
+document.querySelectorAll('[data-show]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-show]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  renderAll();}));
+renderAll();
+</script>

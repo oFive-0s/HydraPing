@@ -1,0 +1,290 @@
+<title>HydraPing Edge Preview</title>
+<style>
+  :root{--ink:#e8eaed; --ink-dim:#9aa0a6; --hair:rgba(255,255,255,.10); --panel:rgba(255,255,255,.04)}
+  *{box-sizing:border-box}
+  body{margin:0; padding:0 0 80px; font:14px/1.5 'Poppins',-apple-system,'Segoe UI',sans-serif;
+       color:var(--ink); background:#0b0d10}
+  header{position:sticky; top:0; z-index:10; padding:16px 28px; backdrop-filter:blur(20px);
+         background:rgba(11,13,16,.85); border-bottom:1px solid var(--hair);
+         display:flex; gap:22px; align-items:center; flex-wrap:wrap}
+  h1{font-size:15px; margin:0; font-weight:600; letter-spacing:-.2px}
+  h1 span{color:var(--ink-dim); font-weight:400}
+  .ctl{display:flex; gap:6px; align-items:center}
+  .ctl label{font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.7px}
+  button.seg{font:inherit; font-size:11px; padding:5px 11px; cursor:pointer; color:var(--ink-dim);
+             background:var(--panel); border:1px solid var(--hair); border-radius:7px}
+  button.seg[aria-pressed="true"]{background:rgba(138,180,248,.18); color:#c6dcff; border-color:rgba(138,180,248,.35)}
+
+  main{padding:26px 28px}
+  .theme-block{margin-bottom:30px}
+  .theme-name{font-size:11px; letter-spacing:1.4px; text-transform:uppercase; color:var(--ink-dim);
+              margin:0 0 11px; font-weight:600}
+  .stage{border-radius:16px; padding:24px; border:1px solid var(--hair);
+         display:flex; flex-direction:column; gap:20px; overflow:auto}
+  body[data-bg="dark"]  .stage{background:radial-gradient(700px 300px at 12% 15%,#1d3a5f 0,transparent 60%),
+      radial-gradient(600px 320px at 85% 80%,#4a1f47 0,transparent 62%),#101418}
+  body[data-bg="light"] .stage{background:radial-gradient(700px 300px at 12% 15%,#fff 0,transparent 60%),
+      radial-gradient(600px 320px at 85% 80%,#ffe2c4 0,transparent 62%),#eceff3}
+  body[data-bg="busy"]  .stage{background:repeating-linear-gradient(45deg,#0e1116 0 14px,#161b22 14px 28px),
+      radial-gradient(600px 300px at 70% 30%,#2b6cb0 0,transparent 60%)}
+
+  .row{display:flex; gap:24px; align-items:center; flex-wrap:wrap}
+  .cell{display:flex; flex-direction:column; gap:8px}
+  .cap{font-size:10px; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,.42)}
+  .cap b{color:rgba(255,255,255,.82); font-weight:600}
+  body[data-bg="light"] .cap{color:rgba(0,0,0,.45)} body[data-bg="light"] .cap b{color:rgba(0,0,0,.75)}
+
+  /* zoom: CSS `zoom` reflows (unlike transform:scale, which overflows its box)
+     and re-rasterizes the SVG at the target size, so edges stay true at 6× */
+  .zoomwrap{width:fit-content}
+
+  /* ═══ overlay bar — 416×44, 1:1 with LAYOUT_CONFIGS["rectangular"] ═══ */
+  .bar{width:416px; height:44px; position:relative; display:flex; align-items:center; gap:8px;
+       padding:4px 12px; font-family:'Poppins','Segoe UI',sans-serif}
+  .bar > svg.frame{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+  .bar > svg.frame.behind{z-index:0}
+  .mini{width:44px; height:44px; padding:2px; justify-content:center; gap:0}
+  .bar > *:not(svg.frame){position:relative; z-index:1}
+
+  /* ── contents ── */
+  .ring{flex:0 0 auto;position:relative}
+  /* % is drawn as SVG <text> in the ring's own coordinate system — CSS line-box
+     centring put the ink 0.75px high because line-height (1.5) ≠ glyph ink */
+
+  /* "Now" column shows the ACTUAL hardcoded colours from _create_all_widgets(),
+     which is the light-theme bug: white text regardless of theme */
+  .bar.before .msg, .bar.before .info{color:rgba(255,255,255,.90)}
+  .bar.before .kebab{color:rgba(255,255,255,.63)}
+  .bar.before .btn{color:rgba(255,255,255,.94)}
+  .kebab{width:32px;height:32px;flex:0 0 auto;border-radius:8px;display:grid;place-items:center;
+         font-size:15px;line-height:1;color:rgba(var(--txt),.63);background:rgba(var(--hi),.024)}
+  .msg{flex:1 1 auto; min-width:0; font-size:11.5px; font-weight:600; letter-spacing:-.15px;
+       color:rgba(var(--txt),.90); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .info{width:110px; flex:0 0 auto; font-size:10.5px; font-weight:600; letter-spacing:.1px;
+        color:rgba(var(--txt),.86); text-align:right}
+  .btn{height:32px; flex:0 0 auto; position:relative; display:grid; place-items:center;
+       font:600 11px 'Poppins','Segoe UI',sans-serif; color:rgba(var(--txt),.94)}
+  .btn.drink{width:87px} .btn.warn{width:69px}
+  .btn > svg{position:absolute; inset:0; width:100%; height:100%}
+  .btn > span{position:relative; z-index:1}
+  .before .btn{border:1px solid rgba(255,255,255,.157); border-radius:8px;
+    background:linear-gradient(180deg,rgba(255,255,255,.118),rgba(255,255,255,.078))}
+  .before .btn.warn{border-color:rgba(255,200,100,.157);
+    background:linear-gradient(180deg,rgba(255,200,100,.118),rgba(255,200,100,.078))}
+
+  .notes{margin:30px 28px 0; padding:20px 24px; border-radius:14px; background:var(--panel);
+         border:1px solid var(--hair); max-width:960px}
+  .notes h2{font-size:11px; letter-spacing:1.3px; text-transform:uppercase; color:var(--ink-dim); margin:0 0 12px}
+  .notes ul{margin:0; padding-left:18px} .notes li{margin-bottom:8px; font-size:13px; color:#c8ccd2}
+  .notes code{font-family:ui-monospace,Consolas,monospace; font-size:12px; color:#8ab4f8}
+</style>
+
+<header>
+  <h1>HydraPing overlay <span>— edge treatment, 1:1</span></h1>
+  <div class="ctl"><label>Backdrop</label>
+    <button class="seg" data-bg="dark" aria-pressed="true">Dark</button>
+    <button class="seg" data-bg="light" aria-pressed="false">Light</button>
+    <button class="seg" data-bg="busy" aria-pressed="false">Busy</button></div>
+  <div class="ctl"><label>State</label>
+    <button class="seg" data-state="rest" aria-pressed="true">Rest</button>
+    <button class="seg" data-state="hover" aria-pressed="false">Hover</button>
+    <button class="seg" data-state="alert" aria-pressed="false">Alert</button></div>
+  <div class="ctl"><label>Zoom</label>
+    <button class="seg" data-zoom="1" aria-pressed="true">1×</button>
+    <button class="seg" data-zoom="3" aria-pressed="false">3×</button>
+    <button class="seg" data-zoom="6" aria-pressed="false">6×</button></div>
+</header>
+
+<main id="out"></main>
+
+<div class="notes">
+  <h2>Why it was rough, and what fixes it</h2>
+  <ul>
+    <li><b>One path, not two.</b> The seam came from a QSS <code>border-radius</code> fill and a <code>paintEvent</code> stroke being rasterized as two separate rounded rects on nearly the same geometry — their antialiased corners disagree by a fraction of a pixel and fringe. Fill and rim now share a single <code>QPainterPath</code>, so there is nothing to misalign. The preview does the same: one SVG <code>&lt;rect&gt;</code> carrying both <code>fill</code> and <code>stroke</code>.</li>
+    <li><b>Half-pixel alignment.</b> A 1.1px pen centred on an integer-inset rect straddles a pixel boundary and lands at ~50% coverage on every edge — the classic soft-yet-jagged look. The path is inset by exactly <code>pen_width / 2</code>, putting the centreline on the half-pixel grid.</li>
+    <li><b>No stacked sub-pixel strokes.</b> The old 0.5px α22 inner ring and the 2× symmetric shadow rings each contributed partial coverage on top of the main stroke. Three overlapping partial-coverage strokes is what actually produced the grain. Now: one rim stroke, one optional inner feather at 0.9px, and the shadow moved off the edge entirely.</li>
+    <li><b>Device pixel ratio.</b> Qt paints in logical coordinates; on a 125%/150% Windows display a 1.1px pen becomes 1.375/1.65 device px and re-samples badly. Pen width will be quantised against <code>devicePixelRatio</code> so it lands on whole device pixels.</li>
+    <li><b>Radius continuity.</b> Fill radius 12 and stroke radius 12 on differently-inset rects give non-concentric arcs. The inner feather's radius is now derived (<code>r − inset</code>) so all arcs stay concentric.</li>
+  </ul>
+  <h2 style="margin-top:18px">Light-theme text — three separate faults</h2>
+  <ul>
+    <li><b>Every label is hardcoded white.</b> <code>_create_all_widgets()</code> writes <code>rgba(255,255,255,…)</code> into the message, info, kebab, drink and snooze stylesheets. Light Overlay's <code>text_primary</code> is <code>rgba(33,33,33,250)</code> — near black — so nothing agrees with it. The "Now" column above shows these true colours.</li>
+    <li><b><code>_update_theme_colors()</code> never runs at startup.</b> <code>main.py</code> constructs <code>OverlayWindow(theme_name=…)</code> and never calls <code>set_theme()</code>, which is the only path that re-colours anything. Launch with Light Overlay saved and you get white text until you open Settings and re-pick the theme.</li>
+    <li><b>The info label is re-themed by a dead branch.</b> <code>_update_theme_colors()</code> guards on <code>hasattr(self, '_consumed_label')</code> — that attribute is never assigned anywhere in the file. The widget is <code>_info_label</code>. So even after <code>set_theme()</code>, the ml counter stays white. Drink/snooze are never re-themed at all.</li>
+  </ul>
+  <h2 style="margin-top:18px">Ring % centring</h2>
+  <ul>
+    <li><b>The offset shadow drags it down.</b> The <code>%</code> is drawn twice — black α120 at <code>adjusted(0,1,0,1)</code>, then white on top. Measured in offscreen Qt at 35×35: the composite ink sits <b>+0.5px below</b> the ring centre for every value tested. Fix: drop the offset copy.</li>
+    <li><b>Line-box vs glyph ink.</b> <code>AlignCenter</code> centres the font's ascent+descent box, not the visible digits. Centring on <code>QFontMetricsF.tightBoundingRect()</code> puts the actual ink on the ring's centre.</li>
+    <li><b>This preview had the same fault, worse.</b> The <code>%</code> was an HTML element centred with <code>place-items:center</code>, inheriting <code>line-height:1.5</code> → measured <b>0.75px high</b>. It is now an SVG <code>&lt;text&gt;</code> in the ring's own coordinate system, so no line box is involved.</li>
+  </ul>
+  <h2 style="margin-top:18px">Design intent (unchanged)</h2>
+  <ul>
+    <li><b>Rim, not outline.</b> Alpha varies 105 → 38 → 16 → 30 → 62 along a 135° axis, so the top-left catches light and the long edges nearly vanish.</li>
+    <li><b>Per-theme edge tint</b> via new <code>edge_hi</code>/<code>edge_lo</code> tokens — white-on-everything is why all eight themes read as one.</li>
+  </ul>
+</div>
+
+<script>
+const THEMES = {
+  'Light Glassmorphic':{bg:['30,30,30,.157','20,20,20,.118'],hv:['30,30,30,.235','20,20,20,.196'],
+    ob:'rgba(0,0,0,.353)',ohb:'rgba(0,0,0,.47)',hi:'255,255,255',lo:'0,0,0',txt:'0,0,0',ring:'#141414'},
+  'Dark Glassmorphic':{bg:['255,255,255,.157','255,255,255,.118'],hv:['255,255,255,.235','255,255,255,.196'],
+    ob:'rgba(255,255,255,.353)',ohb:'rgba(255,255,255,.47)',hi:'255,255,255',lo:'255,255,255',txt:'255,255,255',ring:'#fff'},
+  'Wine Red':{bg:['139,0,0,.176','115,0,0,.137'],hv:['139,0,0,.255','115,0,0,.216'],
+    ob:'rgba(178,34,34,.392)',ohb:'rgba(178,34,34,.51)',hi:'255,205,205',lo:'120,0,0',txt:'255,255,255',ring:'#fff'},
+  'Forest Green':{bg:['129,199,132,.176','102,187,106,.137'],hv:['129,199,132,.255','102,187,106,.216'],
+    ob:'rgba(165,214,167,.392)',ohb:'rgba(165,214,167,.51)',hi:'220,255,225',lo:'20,70,25',txt:'255,255,255',ring:'#fff'},
+  'Ocean Blue':{bg:['100,181,246,.176','66,165,245,.137'],hv:['100,181,246,.255','66,165,245,.216'],
+    ob:'rgba(129,212,250,.392)',ohb:'rgba(129,212,250,.51)',hi:'215,240,255',lo:'10,50,100',txt:'255,255,255',ring:'#fff'},
+  'Sunset Orange':{bg:['255,183,77,.176','255,167,38,.137'],hv:['255,183,77,.255','255,167,38,.216'],
+    ob:'rgba(255,204,128,.392)',ohb:'rgba(255,204,128,.51)',hi:'255,235,205',lo:'150,60,10',txt:'255,255,255',ring:'#fff'},
+  'Light Overlay':{bg:['255,255,255,.078','250,250,250,.059'],hv:['255,255,255,.157','250,250,250,.118'],
+    ob:'rgba(200,200,200,.314)',ohb:'rgba(180,180,180,.431)',hi:'255,255,255',lo:'120,120,120',txt:'33,33,33',ring:'#212121'},
+  'Midnight Blue':{bg:['13,27,42,.196','27,38,59,.157'],hv:['13,27,42,.275','27,38,59,.235'],
+    ob:'rgba(65,105,225,.392)',ohb:'rgba(65,105,225,.51)',hi:'200,220,255',lo:'10,20,45',txt:'255,255,255',ring:'#fff'},
+};
+const ARC = {low:'rgba(232,71,71,.86)', mid:'rgba(255,193,7,.86)', high:'rgba(76,175,80,.86)'};
+const RIM = {              // alpha stops, /255, along the 135° axis
+  rest : [[0,'hi',105],[.28,'hi',38],[.52,'lo',16],[.78,'lo',30],[1,'hi',62]],
+  hover: [[0,'hi',152],[.28,'hi',55],[.52,'lo',23],[.78,'lo',43],[1,'hi',90]],
+};
+let UID = 0;
+
+/* The frame: ONE rounded rect carrying fill + gradient stroke, inset by penWidth/2
+   so the stroke centreline sits on the half-pixel grid. Mirrors QPainterPath+QPen. */
+function frame(k, W, H, R, state, kind){
+  const id = 'g'+(UID++);
+  if(kind==='before'){
+    // reproduce today's stack: fill, then 3 constant-alpha rings on different insets
+    return `<svg class="frame behind" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="${id}f" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="rgba(${k.bg[0]})"/><stop offset="1" stop-color="rgba(${k.bg[1]})"/>
+      </linearGradient></defs>
+      <rect x="0" y="0" width="${W}" height="${H}" rx="${R}" fill="url(#${id}f)"/>
+      <rect x=".5" y=".5" width="${W-1}" height="${H-1}" rx="${R}" fill="none"
+            stroke="${state==='rest'?k.ob:k.ohb}" stroke-width="1"/>
+      <rect x="1" y="1" width="${W-2}" height="${H-2}" rx="${R}" fill="none"
+            stroke="rgba(255,255,255,.255)" stroke-width="1.5"/>
+      <rect x="2.2" y="2.2" width="${W-4.4}" height="${H-4.4}" rx="${R-1}" fill="none"
+            stroke="rgba(255,255,255,.086)" stroke-width=".5"/>
+    </svg>`;
+  }
+  const pw = 1.1, o = pw/2;                       // half-pixel aligned inset
+  const fi = pw + .35, fr = Math.max(0, R - fi);  // feather inset, concentric radius
+  const stops = RIM[state==='rest'?'rest':'hover']
+    .map(([off,which,a])=>`<stop offset="${off}" stop-color="rgb(${k[which]})" stop-opacity="${(a/255).toFixed(3)}"/>`).join('');
+  return `<svg class="frame behind" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="${id}f" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="rgba(${state==='rest'?k.bg[0]:k.hv[0]})"/>
+        <stop offset="1" stop-color="rgba(${state==='rest'?k.bg[1]:k.hv[1]})"/>
+      </linearGradient>
+      <linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient>
+      <linearGradient id="${id}i" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0"   stop-color="rgb(${k.hi})" stop-opacity=".133"/>
+        <stop offset=".45" stop-color="rgb(${k.hi})" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0"   stop-color="rgb(${k.hi})" stop-opacity="0"/>
+        <stop offset=".35" stop-color="rgb(${k.hi})" stop-opacity=".235"/>
+        <stop offset=".82" stop-color="rgb(${k.hi})" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <!-- fill + rim on ONE path: no two-rasterization seam -->
+    <rect x="${o}" y="${o}" width="${W-pw}" height="${H-pw}" rx="${R-o}"
+          fill="url(#${id}f)" stroke="url(#${id}r)" stroke-width="${pw}"/>
+    <!-- glass thickness: concentric inner feather, top-lit only -->
+    <rect x="${fi}" y="${fi}" width="${W-fi*2}" height="${H-fi*2}" rx="${fr}"
+          fill="none" stroke="url(#${id}i)" stroke-width=".9"/>
+    <!-- sheen hairline, fades out before both corners -->
+    <line x1="${R}" y1="${fi+.6}" x2="${W-R}" y2="${fi+.6}" stroke="url(#${id}s)" stroke-width="1"/>
+  </svg>`;
+}
+
+/* borderless button: rim light baked into the first 6% of the fill */
+function btnSvg(k, W, H, warn){
+  const id='b'+(UID++);
+  const c = warn ? ['255,209,138','255,196,110','255,180,80'] : ['255,255,255','255,255,255','255,255,255'];
+  const a = warn ? [.29,.157,.07] : [.216,.133,.063];
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="rgb(${c[0]})" stop-opacity="${a[0]}"/>
+      <stop offset=".06" stop-color="rgb(${c[1]})" stop-opacity="${a[1]}"/>
+      <stop offset="1" stop-color="rgb(${c[2]})" stop-opacity="${a[2]}"/>
+    </linearGradient></defs>
+    <rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="url(#${id})"/>
+  </svg>`;
+}
+
+function ring(pct, kind, size, k){
+  const s=size, w=Math.max(2.8,s/14), r=(s-w)/2-1.5, c=s/2, C=2*Math.PI*r;
+  const col = pct<33?ARC.low : pct<66?ARC.mid : ARC.high;
+  const track = kind==='after' ? 'rgba(255,255,255,.13)' : 'rgba(255,255,255,.098)';
+  const dash = C*pct/100, fs = Math.max(9, Math.round(s/4.2));
+  // "Now" hardcodes white + a 1px-offset black shadow (overlay_window.py:128-133);
+  // "Proposed" uses the theme's text colour and drops the offset shadow.
+  const before = kind !== 'after';
+  const txt = before ? '#fff' : k.ring;
+  const shadow = before
+    ? `<text x="${c}" y="${c+1}" text-anchor="middle" dominant-baseline="central"
+             font-size="${fs}" font-weight="700" fill="rgba(0,0,0,.47)">${pct}%</text>` : '';
+  return `<div class="ring" style="width:${s}px;height:${s}px">
+    <svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">
+      <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${track}" stroke-width="${w}"/>
+      <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${col}" stroke-width="${w+1.5}"
+        stroke-linecap="round" stroke-dasharray="${dash} ${C}" opacity=".31" transform="rotate(-90 ${c} ${c})"/>
+      <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${col}" stroke-width="${w}"
+        stroke-linecap="round" stroke-dasharray="${dash} ${C}" transform="rotate(-90 ${c} ${c})"/>
+      ${shadow}
+      <text class="pct" x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central"
+            font-family="Poppins,'Segoe UI',sans-serif" font-size="${fs}" font-weight="700"
+            fill="${txt}">${pct}%</text>
+    </svg></div>`;
+}
+
+// visibility per _handle_hover_enter() / set_alert_mode()
+function bar(k, kind, state){
+  const hov = state!=='rest', alert = state==='alert';
+  const btn = (cls,label,w) => kind==='after'
+    ? `<div class="btn ${cls}">${btnSvg(k,w,32,cls==='warn')}<span>${label}</span></div>`
+    : `<div class="btn ${cls}"><span>${label}</span></div>`;
+  return `<div class="bar ${kind}">${frame(k,416,44,12,state,kind)}
+    ${ring(72,kind,35,k)}<div class="kebab">⋮</div>
+    ${alert ? '' : '<div class="msg">Stay Hydrated, Stay Healthy</div>'}
+    ${alert ? btn('warn','Snooze',69)+btn('drink','Drink Now',87) : ''}
+    ${hov ? '<div class="info">1450ml / 2000ml</div>' : ''}</div>`;
+}
+function mini(k, kind, state){
+  return `<div class="bar mini ${kind}">${frame(k,44,44,8,state,kind)}${ring(72,kind,34,k)}</div>`;
+}
+
+function render(){
+  const state = document.querySelector('[data-state][aria-pressed="true"]').dataset.state;
+  const zoom  = +document.querySelector('[data-zoom][aria-pressed="true"]').dataset.zoom;
+  UID = 0;
+  document.getElementById('out').innerHTML = Object.entries(THEMES).map(([name,k])=>{
+    const vars = `--hi:${k.hi};--lo:${k.lo};--txt:${k.txt};--ring-text:${k.ring};`;
+    const z = zoom===1 ? '' : `zoom:${zoom};`;
+    return `<section class="theme-block"><p class="theme-name">${name}</p>
+      <div class="stage" style="${vars}">
+        <div class="zoomwrap" style="${z}">
+          <div class="row" style="margin-bottom:20px">
+            <div class="cell"><span class="cap">Now — <b>3 stacked rings</b></span>${bar(k,'before',state)}</div>
+            <div class="cell"><span class="cap">Minimal</span>${mini(k,'before',state)}</div></div>
+          <div class="row">
+            <div class="cell"><span class="cap">Proposed — <b>single-path rim</b></span>${bar(k,'after',state)}</div>
+            <div class="cell"><span class="cap">Minimal</span>${mini(k,'after',state)}</div></div>
+        </div>
+      </div></section>`;
+  }).join('');
+}
+
+document.querySelectorAll('.seg').forEach(b=>b.addEventListener('click',()=>{
+  const group = b.dataset.bg ? 'bg' : b.dataset.state ? 'state' : 'zoom';
+  document.querySelectorAll('button[data-'+group+']').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  if(group==='bg') document.body.dataset.bg = b.dataset.bg; else render();
+}));
+document.body.dataset.bg='dark';
+render();
+</script>

@@ -15,6 +15,7 @@ from core.auto_launch import is_auto_launch_enabled, enable_auto_launch, disable
 from core.pattern_analyzer import PatternAnalyzer
 from overlay_window import OverlayWindow
 from settings_dialog import SettingsDialog
+from font_loader import load_poppins
 
 
 class HydraPingController(QtCore.QObject):
@@ -300,19 +301,29 @@ class HydraPingController(QtCore.QObject):
         )
         msg_box.setStyleSheet("""
             QMessageBox {
-                background: rgba(30,30,40,250);
+                background: rgba(28,28,36,250);
             }
             QLabel {
-                color: rgba(255,255,255,250);
+                color: rgba(255,255,255,230);
                 font-size: 12px;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QPushButton {
-                background: rgba(255,255,255,25);
-                color: rgba(255,255,255,250);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
-                padding: 6px 16px;
-                min-width: 60px;
+                background: rgba(255,255,255,18);
+                color: rgba(255,255,255,230);
+                border: 1px solid rgba(255,255,255,35);
+                border-radius: 7px;
+                padding: 7px 18px;
+                font-weight: 600;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
+                min-width: 64px;
+            }
+            QPushButton:hover {
+                background: rgba(255,255,255,28);
+                border-color: rgba(255,255,255,50);
+            }
+            QPushButton:pressed {
+                background: rgba(255,255,255,12);
             }
         """)
         
@@ -327,18 +338,28 @@ class HydraPingController(QtCore.QObject):
         msg_box.setIcon(QtWidgets.QMessageBox.Icon.Information)
         msg_box.setStyleSheet("""
             QMessageBox {
-                background: rgba(30,30,40,250);
+                background: rgba(28,28,36,250);
             }
             QLabel {
-                color: rgba(255,255,255,250);
+                color: rgba(255,255,255,230);
                 font-size: 12px;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QPushButton {
-                background: rgba(255,255,255,25);
-                color: rgba(255,255,255,250);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
-                padding: 6px 16px;
+                background: rgba(255,255,255,18);
+                color: rgba(255,255,255,230);
+                border: 1px solid rgba(255,255,255,35);
+                border-radius: 7px;
+                padding: 7px 18px;
+                font-weight: 600;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background: rgba(255,255,255,28);
+                border-color: rgba(255,255,255,50);
+            }
+            QPushButton:pressed {
+                background: rgba(255,255,255,12);
             }
         """)
         msg_box.exec()
@@ -472,6 +493,10 @@ class HydraPingApp:
         """Start the application"""
         self.app = QtWidgets.QApplication(sys.argv)
         self.app.setApplicationName("HydraPing")
+        
+        # Load bundled Poppins fonts before any UI is created
+        load_poppins()
+        
         # Tray removed; quit when last window closes
         self.app.setQuitOnLastWindowClosed(True)
         

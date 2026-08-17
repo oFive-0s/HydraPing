@@ -3,6 +3,7 @@ HydraPing - Glassmorphic Hydration Reminder Overlay
 A sleek PySide6-based desktop overlay with advanced glassmorphism design
 """
 
+import re
 import sys
 import os
 import time
@@ -10,6 +11,29 @@ from PySide6 import QtCore, QtWidgets, QtGui
 from theme_manager import ThemeManager
 from confetti_widget import ConfettiWidget
 from layouts import LayoutManager
+
+
+_RGBA_RE = re.compile(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)')
+
+
+def parse_rgba(value, fallback=(255, 255, 255, 255)):
+    """Parse an 'rgba(r,g,b,a)' theme token into a QColor (alpha 0-255)."""
+    match = _RGBA_RE.match(value.strip()) if isinstance(value, str) else None
+    if not match:
+        return QtGui.QColor(*fallback)
+    r, g, b, a = match.groups()
+    return QtGui.QColor(int(r), int(g), int(b), int(float(a)) if a is not None else 255)
+
+
+def lerp_color(a, b, t):
+    """Blend two QColors; t=0 gives a, t=1 gives b."""
+    t = max(0.0, min(1.0, t))
+    return QtGui.QColor(
+        round(a.red() + (b.red() - a.red()) * t),
+        round(a.green() + (b.green() - a.green()) * t),
+        round(a.blue() + (b.blue() - a.blue()) * t),
+        round(a.alpha() + (b.alpha() - a.alpha()) * t),
+    )
 
 
 class CircularProgress(QtWidgets.QWidget):
@@ -66,15 +90,15 @@ class CircularProgress(QtWidgets.QWidget):
         pen_width = max(2.8, size / 14.0)
         radius = (size - pen_width) / 2.0 - 1.5
         
-        # Subtle shadow/glow background
-        shadow_pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 40))
-        shadow_pen.setWidthF(pen_width + 1.0)
-        shadow_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-        painter.setPen(shadow_pen)
-        painter.drawEllipse(center, radius - 0.5, radius - 0.5)
-        
-        # Background circle with gradient feel
-        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 25))
+        # The old black shadow ellipse at radius-0.5 was a second, near-coincident
+        # stroke under the track; the two partial-coverage rings beat against each
+        # other and grained the circle.  The track alone carries the recess now.
+
+        # Track, tinted from the theme's text colour so it stays visible on the
+        # light themes (a hardcoded white track vanished on those).
+        track_colour = parse_rgba(self.theme_manager.get_theme()['text_primary'])
+        track_colour.setAlpha(38)
+        pen = QtGui.QPen(track_colour)
         pen.setWidthF(pen_width)
         pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
@@ -114,24 +138,38 @@ class CircularProgress(QtWidgets.QWidget):
             painter.setPen(pen)
             painter.drawArc(rect, 90 * 16, -span_angle)
             
-        # Percentage text with shadow
+        # Percentage text
         font = painter.font()
         font_size = max(9, int(size / 4.2))
         font.setPixelSize(font_size)
         font.setWeight(QtGui.QFont.Weight.Bold)
-        font.setFamily("Segoe UI")
+        font.setFamily("Poppins")
         painter.setFont(font)
-        
+
         text = f"{int(self._animated_progress)}%"
-        
-        # Text shadow for depth
-        painter.setPen(QtGui.QColor(0, 0, 0, 120))
-        painter.drawText(self.rect().adjusted(0, 1, 0, 1), QtCore.Qt.AlignmentFlag.AlignCenter, text)
-        
-        # Main text
-        painter.setPen(QtGui.QColor(255, 255, 255, 255))
-        painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, text)
-    
+
+        # Centre the glyph ink on the ring's centre, not the font's line box.
+        # AlignCenter centres ascent+descent, which for digits (no descenders)
+        # leaves the visible ink off-centre; the old 1px-offset drop shadow then
+        # dragged the composite a further half-pixel down.
+        metrics = QtGui.QFontMetricsF(font)
+        ink = metrics.tightBoundingRect(text)
+        baseline_x = center.x() - ink.width() / 2.0 - ink.x()
+        baseline_y = center.y() - ink.height() / 2.0 - ink.y()
+
+        # tightBoundingRect is metric-exact but lands on fractional pixels, which
+        # resamples badly at these sizes.  Snap the baseline to the device grid.
+        dpr = self.devicePixelRatioF() or 1.0
+        baseline_x = round(baseline_x * dpr) / dpr
+        baseline_y = round(baseline_y * dpr) / dpr
+
+        # Follow the theme: hardcoded white was invisible on the light themes,
+        # whose text_primary is near-black.
+        text_colour = parse_rgba(self.theme_manager.get_theme()['text_primary'])
+        painter.setPen(text_colour)
+        painter.drawText(QtCore.QPointF(baseline_x, baseline_y), text)
+
+
     def _parse_rgba(self, rgba_str):
         """Parse rgba string to QColor"""
         # Parse "rgba(r,g,b,a)" format
@@ -155,120 +193,97 @@ class OverlayWindow(QtWidgets.QWidget):
     terminate_requested = QtCore.Signal()
     
     def paintEvent(self, event):
-        """Custom paint event for adaptive shape border with ultra-smooth edges"""
-        super().paintEvent(event)
-        
+        """Paint the glass surface: fill and rim on a single path.
+
+        Everything the user sees as "the edge" is drawn here and nowhere else.
+        The container/hover QFrames are transparent layout hosts (see
+        ThemeManager.get_overlay_stylesheet) because a QSS rounded background
+        under a painted stroke is two independent rasterisations of nearly the
+        same shape, and their antialiased corners disagree by a fraction of a
+        pixel.  That mismatch, plus three stacked partial-coverage strokes, is
+        what made the old edge look ragged.
+        """
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing, True)
-        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceOver)
-        
-        rect = self.rect()
-        
-        # Draw shape based on current window shape
-        if self._window_shape == 'circular':
-            # Minimal mode: small rounded square matching taskbar icon size
-            corner_radius = 8.0
-            
-            # Soft outer shadow
-            for i in range(2):
-                shadow_alpha = 14 - (i * 6)
-                shadow_pen = QtGui.QPen(QtGui.QColor(0, 0, 0, shadow_alpha))
-                shadow_pen.setWidthF(1.5 - (i * 0.5))
-                shadow_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-                shadow_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-                painter.setPen(shadow_pen)
-                painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-                shadow_path = QtGui.QPainterPath()
-                offset = 1.0 + i * 0.4
-                shadow_path.addRoundedRect(
-                    QtCore.QRectF(rect).adjusted(offset, offset, -offset, -offset),
-                    corner_radius - i * 0.3, corner_radius - i * 0.3
-                )
-                painter.drawPath(shadow_path)
-            
-            # Main border
-            main_path = QtGui.QPainterPath()
-            inset = 1.0
-            main_path.addRoundedRect(
-                QtCore.QRectF(rect).adjusted(inset, inset, -inset, -inset),
-                corner_radius, corner_radius
-            )
-            
-            pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 65))
-            pen.setWidthF(1.5)
-            pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-            pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(pen)
+
+        rect = QtCore.QRectF(self.rect())
+        radius = 8.0 if self._window_shape == 'circular' else 12.0
+
+        # Quantise the pen to whole device pixels.  Qt paints in logical
+        # coordinates, so on a 125%/150% display a 1.1px pen becomes 1.375/1.65
+        # device px and resamples into a grainy edge no matter how clean the
+        # geometry is.
+        dpr = self.devicePixelRatioF() or 1.0
+        pen_w = max(1.0, round(1.1 * dpr)) / dpr
+        half = pen_w / 2.0
+
+        # Inset by exactly half the pen so the stroke centreline lands on the
+        # half-pixel grid instead of straddling a pixel boundary at ~50% coverage.
+        body = rect.adjusted(half, half, -half, -half)
+        body_radius = max(0.0, radius - half)
+
+        theme = self.theme_manager.get_theme()
+        t = self._hover_t
+
+        # ---- fill: rest -> hover, interpolated so the hover fade is continuous
+        fill = QtGui.QLinearGradient(rect.topLeft(), rect.bottomRight())
+        fill.setColorAt(0.0, lerp_color(parse_rgba(theme['overlay_bg_start']),
+                                        parse_rgba(theme['hover_bg_start']), t))
+        fill.setColorAt(1.0, lerp_color(parse_rgba(theme['overlay_bg_end']),
+                                        parse_rgba(theme['hover_bg_end']), t))
+
+        # ---- rim: one stroke whose alpha varies around the perimeter
+        rim = QtGui.QLinearGradient(rect.topLeft(), rect.bottomRight())
+        for offset, rgb, alpha in self.theme_manager.get_rim_stops(t):
+            colour = parse_rgba('rgba(%s,%d)' % (rgb, alpha))
+            rim.setColorAt(offset, colour)
+
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(body, body_radius, body_radius)
+
+        pen = QtGui.QPen(QtGui.QBrush(rim), pen_w)
+        pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QBrush(fill))
+        # Single drawPath: fill and stroke share one rasterisation, so there is
+        # no seam between them.
+        painter.drawPath(path)
+
+        edge_hi, _ = self.theme_manager.get_edge_colors()
+
+        # ---- glass thickness: concentric inner feather, lit on its top 45% only
+        feather_inset = pen_w + 0.35
+        feather = rect.adjusted(feather_inset, feather_inset,
+                                -feather_inset, -feather_inset)
+        if feather.width() > 0 and feather.height() > 0:
+            inner = QtGui.QLinearGradient(feather.topLeft(), feather.bottomLeft())
+            inner.setColorAt(0.0, parse_rgba('rgba(%s,%d)' % (edge_hi, round(34 * (1 + 0.45 * t)))))
+            inner.setColorAt(0.45, parse_rgba('rgba(%s,0)' % edge_hi))
+            inner_pen = QtGui.QPen(QtGui.QBrush(inner), 0.9)
+            inner_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(inner_pen)
             painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.drawPath(main_path)
-            
-            # Subtle inner highlight
+            inner_radius = max(0.0, radius - feather_inset)
             inner_path = QtGui.QPainterPath()
-            inner_inset = 2.2
-            inner_path.addRoundedRect(
-                QtCore.QRectF(rect).adjusted(inner_inset, inner_inset, -inner_inset, -inner_inset),
-                corner_radius - 1, corner_radius - 1
-            )
-            highlight_pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 22))
-            highlight_pen.setWidthF(0.5)
-            highlight_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(highlight_pen)
+            inner_path.addRoundedRect(feather, inner_radius, inner_radius)
             painter.drawPath(inner_path)
-        else:
-            # Rounded rectangle with QPainterPath for smooth curves
-            corner_radius = 12.0
-            
-            # Soft outer shadow (2 feathered layers)
-            for i in range(2):
-                shadow_alpha = 14 - (i * 6)
-                shadow_pen = QtGui.QPen(QtGui.QColor(0, 0, 0, shadow_alpha))
-                shadow_pen.setWidthF(1.5 - (i * 0.5))
-                shadow_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-                shadow_pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-                painter.setPen(shadow_pen)
-                painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-                shadow_path = QtGui.QPainterPath()
-                offset = 1.0 + i * 0.4
-                shadow_path.addRoundedRect(
-                    QtCore.QRectF(rect).adjusted(offset, offset, -offset, -offset),
-                    corner_radius - i * 0.3, corner_radius - i * 0.3
-                )
-                painter.drawPath(shadow_path)
-            
-            # Main border via QPainterPath
-            main_path = QtGui.QPainterPath()
-            inset = 1.0
-            main_path.addRoundedRect(
-                QtCore.QRectF(rect).adjusted(inset, inset, -inset, -inset),
-                corner_radius, corner_radius
-            )
-            
-            pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 65))
-            pen.setWidthF(1.5)
-            pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-            pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-            painter.drawPath(main_path)
-            
-            # Subtle inner highlight
-            inner_path = QtGui.QPainterPath()
-            inner_inset = 2.2
-            inner_path.addRoundedRect(
-                QtCore.QRectF(rect).adjusted(inner_inset, inner_inset, -inner_inset, -inner_inset),
-                corner_radius - 1, corner_radius - 1
-            )
-            
-            highlight_pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 22))
-            highlight_pen.setWidthF(0.5)
-            highlight_pen.setJoinStyle(QtCore.Qt.PenJoinStyle.RoundJoin)
-            painter.setPen(highlight_pen)
-            painter.drawPath(inner_path)
-        
+
+        # ---- sheen hairline just inside the top edge, fading out before the corners
+        if rect.width() > radius * 2:
+            y = feather_inset + 0.6
+            sheen = QtGui.QLinearGradient(radius, y, rect.width() - radius, y)
+            sheen.setColorAt(0.0, parse_rgba('rgba(%s,0)' % edge_hi))
+            sheen.setColorAt(0.35, parse_rgba('rgba(%s,%d)' % (edge_hi, round(60 * (1 + 0.45 * t)))))
+            sheen.setColorAt(0.82, parse_rgba('rgba(%s,0)' % edge_hi))
+            sheen_pen = QtGui.QPen(QtGui.QBrush(sheen), 1.0)
+            sheen_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
+            painter.setPen(sheen_pen)
+            painter.drawLine(QtCore.QPointF(radius, y),
+                             QtCore.QPointF(rect.width() - radius, y))
+
         painter.end()
-    
+
     def __init__(self, parent=None, theme_name='Dark Glassmorphic'):
         super().__init__(parent)
         
@@ -284,6 +299,10 @@ class OverlayWindow(QtWidgets.QWidget):
         self._drag_active = False
         self._drag_offset = QtCore.QPoint()
         self._is_hovered = False
+        # Hover is a continuous 0..1 value read by paintEvent, not a second
+        # translucent QFrame faded in over the first.  Two stacked glass panels
+        # meant two rims and two rounded-rect rasterisations.
+        self._hover_t = 0.0
         self._alert_mode = False
         self._current_message_index = 0
         self._current_consumed = 0
@@ -453,24 +472,77 @@ class OverlayWindow(QtWidgets.QWidget):
             print(f"[Overlay] Background detection error: {e}")
     
     def _update_theme_colors(self):
-        """Update overlay colors based on current theme"""
+        """Re-colour every themed widget from the current theme.
+
+        Called from __init__ as well as set_theme: the widgets are built with
+        placeholder colours, and until this runs they are all white, which is
+        invisible on the light themes.
+        """
         # Update stylesheets
         self._bg_box.setStyleSheet(self.theme_manager.get_overlay_stylesheet())
         self._container.setStyleSheet(self.theme_manager.get_overlay_stylesheet())
-        
+
         # Update text colors
         theme = self.theme_manager.get_theme()
-        
-        if hasattr(self, '_consumed_label'):
-            self._consumed_label.setStyleSheet(f"""
+        edge_hi, _ = self.theme_manager.get_edge_colors()
+
+        # NB: this used to guard on '_consumed_label', an attribute that is never
+        # assigned anywhere, so the ml counter was never re-themed at all.
+        if hasattr(self, '_info_label'):
+            self._info_label.setStyleSheet(f"""
                 QLabel {{
-                    color: {theme['text_primary']};
-                    font-size: 18px;
-                    font-weight: 700;
+                    color: {theme['text_secondary']};
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    font-family: 'Poppins', 'Segoe UI', sans-serif;
                     background: transparent;
+                    border: none;
+                    padding: 2px 4px;
+                    letter-spacing: 0.1px;
                 }}
             """)
-        
+
+        # Drink / snooze were previously never re-themed on any code path.
+        for button, tint in ((getattr(self, '_drink_button', None), edge_hi),
+                             (getattr(self, '_snooze_button', None), '255,200,100')):
+            if button is None:
+                continue
+            button.setStyleSheet(f"""
+                QPushButton {{
+                    background: qlineargradient(
+                        x1:0, y1:0, x2:0, y2:1,
+                        stop:0 rgba({tint},55),
+                        stop:0.06 rgba({tint},34),
+                        stop:1 rgba({tint},16)
+                    );
+                    color: {theme['text_primary']};
+                    border: none;
+                    border-radius: 8px;
+                    padding: 5px 14px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    font-family: 'Poppins', 'Segoe UI', sans-serif;
+                }}
+                QPushButton:hover {{
+                    background: qlineargradient(
+                        x1:0, y1:0, x2:0, y2:1,
+                        stop:0 rgba({tint},78),
+                        stop:0.06 rgba({tint},50),
+                        stop:1 rgba({tint},26)
+                    );
+                }}
+                QPushButton:pressed {{
+                    background: qlineargradient(
+                        x1:0, y1:0, x2:0, y2:1,
+                        stop:0 rgba({tint},40),
+                        stop:1 rgba({tint},22)
+                    );
+                }}
+            """)
+
+        if hasattr(self, '_progress_widget'):
+            self._progress_widget.theme_manager = self.theme_manager
+
         if hasattr(self, '_message_label'):
             self._message_label.setStyleSheet(f"""
                 QLabel {{
@@ -483,18 +555,26 @@ class OverlayWindow(QtWidgets.QWidget):
             """)
         
         if hasattr(self, '_menu_button'):
+            # Deliberately far more transparent than theme['button_bg'] (alpha
+            # ~25-30): this button sits *on* the glass, and at that weight it
+            # reads as an opaque chip competing with the surface rather than an
+            # affordance resting on it.  Matches the original alpha-6 intent.
             self._menu_button.setStyleSheet(f"""
                 QToolButton {{
-                    background: {theme['button_bg']};
+                    background: rgba({edge_hi},8);
                     color: {theme['text_secondary']};
                     border: none;
-                    border-radius: 6px;
-                    font-size: 16px;
+                    border-radius: 8px;
+                    padding: 1px;
+                    font-size: 15px;
                     font-weight: 600;
                 }}
                 QToolButton:hover {{
-                    background: {theme['button_hover']};
+                    background: rgba({edge_hi},20);
                     color: {theme['text_primary']};
+                }}
+                QToolButton:pressed {{
+                    background: rgba({edge_hi},12);
                 }}
             """)
         
@@ -533,7 +613,13 @@ class OverlayWindow(QtWidgets.QWidget):
         # Apply initial layout using LayoutManager
         self._layout_manager.set_preferred_layout(self._window_shape)
         self._layout_manager.apply_layout(self._window_shape)
-        
+
+        # Widgets are built with placeholder colours; bind them to the theme now.
+        # main.py constructs OverlayWindow(theme_name=...) and only calls
+        # set_theme() later when settings change, so without this a launch with a
+        # light theme saved showed white-on-white until the user re-picked it.
+        self._update_theme_colors()
+
         # Use window opacity instead of graphics effect to avoid painting conflicts
         self.setWindowOpacity(0.65)  # Rest state
     
@@ -545,20 +631,25 @@ class OverlayWindow(QtWidgets.QWidget):
         # Menu button (⋮)
         self._menu_button = QtWidgets.QToolButton(container)
         self._menu_button.setText("⋮")
-        self._menu_button.setFixedSize(32, 32)
+        self._menu_button.setFixedSize(30, 30)
         self._menu_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._menu_button.setStyleSheet("""
             QToolButton {
-                background: rgba(255,255,255,8);
-                color: rgba(255,255,255,180);
+                background: rgba(255,255,255,6);
+                color: rgba(255,255,255,160);
                 font-size: 15px;
                 font-weight: 600;
-                border-radius: 10px;
-                padding: 2px;
+                border-radius: 8px;
+                padding: 1px;
+                border: 1px solid transparent;
             }
             QToolButton:hover {
-                background: rgba(255,255,255,25);
-                color: rgba(255,255,255,250);
+                background: rgba(255,255,255,18);
+                color: rgba(255,255,255,240);
+                border-color: rgba(255,255,255,12);
+            }
+            QToolButton:pressed {
+                background: rgba(255,255,255,10);
             }
         """)
         self._menu_button.clicked.connect(self._show_menu)
@@ -568,11 +659,11 @@ class OverlayWindow(QtWidgets.QWidget):
         self._message_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self._message_label.setStyleSheet("""
             QLabel {
-                color: rgba(255,255,255,250);
-                font-size: 12px;
+                color: rgba(255,255,255,230);
+                font-size: 11.5px;
                 font-weight: 600;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', 'SF Pro Display', system-ui;
-                letter-spacing: -0.3px;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
+                letter-spacing: -0.15px;
                 background: transparent;
             }
         """)
@@ -585,29 +676,30 @@ class OverlayWindow(QtWidgets.QWidget):
             QPushButton {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,255,255,35),
-                    stop:1 rgba(255,255,255,25)
+                    stop:0 rgba(255,255,255,30),
+                    stop:1 rgba(255,255,255,20)
                 );
-                color: rgba(255,255,255,250);
-                border-radius: 10px;
-                border: 1px solid rgba(255,255,255,50);
+                color: rgba(255,255,255,240);
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,40);
                 padding: 5px 14px;
-                font-size: 11.5px;
+                font-size: 11px;
                 font-weight: 600;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QPushButton:hover {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,255,255,50),
-                    stop:1 rgba(255,255,255,40)
+                    stop:0 rgba(255,255,255,42),
+                    stop:1 rgba(255,255,255,32)
                 );
+                border-color: rgba(255,255,255,55);
             }
             QPushButton:pressed {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,255,255,60),
-                    stop:1 rgba(255,255,255,50)
+                    stop:0 rgba(255,255,255,50),
+                    stop:1 rgba(255,255,255,40)
                 );
             }
         """)
@@ -622,29 +714,30 @@ class OverlayWindow(QtWidgets.QWidget):
             QPushButton {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,200,100,35),
-                    stop:1 rgba(255,200,100,25)
+                    stop:0 rgba(255,200,100,30),
+                    stop:1 rgba(255,200,100,20)
                 );
-                color: rgba(255,255,255,250);
-                border-radius: 10px;
-                border: 1px solid rgba(255,200,100,50);
+                color: rgba(255,255,255,240);
+                border-radius: 8px;
+                border: 1px solid rgba(255,200,100,40);
                 padding: 5px 14px;
-                font-size: 11.5px;
+                font-size: 11px;
                 font-weight: 600;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QPushButton:hover {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,200,100,50),
-                    stop:1 rgba(255,200,100,40)
+                    stop:0 rgba(255,200,100,42),
+                    stop:1 rgba(255,200,100,32)
                 );
+                border-color: rgba(255,200,100,55);
             }
             QPushButton:pressed {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255,200,100,60),
-                    stop:1 rgba(255,200,100,50)
+                    stop:0 rgba(255,200,100,50),
+                    stop:1 rgba(255,200,100,40)
                 );
             }
         """)
@@ -654,17 +747,21 @@ class OverlayWindow(QtWidgets.QWidget):
         # Info label (alternates between consumed and countdown on hover)
         self._info_label = QtWidgets.QLabel("0ml / 2000ml")
         self._info_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self._info_label.setFixedWidth(110)
+        # 110px clipped the leading digit at exactly the moment that matters
+        # most: "2000ml / 2000ml" measures 103px and the 4px side padding left
+        # only 102px, so hitting your goal truncated the number.
+        self._info_label.setFixedWidth(128)
         self._info_label.setStyleSheet("""
             QLabel {
-                color: rgba(255,255,255,250);
-                font-size: 11px;
+                color: rgba(255,255,255,220);
+                font-size: 10.5px;
                 font-weight: 600;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
                 background-color: transparent;
                 background: transparent;
                 border: none;
                 padding: 2px 4px;
+                letter-spacing: 0.1px;
             }
         """)
         self._info_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -678,15 +775,31 @@ class OverlayWindow(QtWidgets.QWidget):
         # Now handled by LayoutManager.apply_layout()
         pass
         
+    def get_hover_t(self):
+        return self._hover_t
+
+    def set_hover_t(self, value):
+        self._hover_t = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    hover_t = QtCore.Property(float, get_hover_t, set_hover_t)
+
+    def _animate_hover(self, target):
+        """Drive the rim/fill blend toward `target` (0 rest, 1 hover)."""
+        self._bg_box_anim.stop()
+        self._bg_box_anim.setStartValue(self._hover_t)
+        self._bg_box_anim.setEndValue(float(target))
+        self._bg_box_anim.start()
+
     def _setup_animations(self):
         """Setup smooth animations for all interactive elements"""
         # Main window fade animation
         self._fade_anim = QtCore.QPropertyAnimation(self, b"windowOpacity", self)
         self._fade_anim.setDuration(380)
         self._fade_anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-        
-        # Background box fade animation
-        self._bg_box_anim = QtCore.QPropertyAnimation(self._bg_opacity_effect, b"opacity", self)
+
+        # Hover blend animation (drives paintEvent, not a QFrame's opacity)
+        self._bg_box_anim = QtCore.QPropertyAnimation(self, b"hover_t", self)
         self._bg_box_anim.setDuration(350)
         self._bg_box_anim.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
         
@@ -764,26 +877,26 @@ class OverlayWindow(QtWidgets.QWidget):
         menu = QtWidgets.QMenu(self)
         menu.setStyleSheet("""
             QMenu {
-                background: rgba(30,30,40,240);
-                color: rgba(255,255,255,250);
-                border: 1px solid rgba(255,255,255,90);
-                border-radius: 8px;
-                padding: 6px;
+                background: rgba(28,28,36,245);
+                color: rgba(255,255,255,230);
+                border: 1px solid rgba(255,255,255,60);
+                border-radius: 10px;
+                padding: 6px 4px;
                 font-size: 11px;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QMenu::item {
-                padding: 8px 24px 8px 12px;
-                border-radius: 4px;
-                margin: 2px;
+                padding: 7px 20px 7px 12px;
+                border-radius: 6px;
+                margin: 1px 4px;
             }
             QMenu::item:selected {
-                background: rgba(255,255,255,25);
+                background: rgba(255,255,255,18);
             }
             QMenu::separator {
                 height: 1px;
-                background: rgba(255,255,255,15);
-                margin: 4px 8px;
+                background: rgba(255,255,255,10);
+                margin: 4px 10px;
             }
         """)
         
@@ -813,35 +926,44 @@ class OverlayWindow(QtWidgets.QWidget):
         dialog.setFixedSize(280, 140)
         dialog.setStyleSheet("""
             QDialog {
-                background: rgba(30,30,40,250);
-                border: 1px solid rgba(255,255,255,90);
+                background: rgba(28,28,36,250);
+                border: 1px solid rgba(255,255,255,60);
                 border-radius: 12px;
             }
             QLabel {
-                color: rgba(255,255,255,250);
+                color: rgba(255,255,255,230);
                 font-size: 12px;
                 font-weight: 600;
-                font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QSpinBox {
-                background: rgba(255,255,255,15);
-                color: rgba(255,255,255,250);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
-                padding: 6px;
-                font-size: 11px;
+                background: rgba(255,255,255,10);
+                color: rgba(255,255,255,230);
+                border: 1.5px solid rgba(255,255,255,35);
+                border-radius: 7px;
+                padding: 7px;
+                font-size: 12px;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
+            }
+            QSpinBox:focus {
+                border-color: rgba(138, 180, 248, 180);
             }
             QPushButton {
-                background: rgba(255,255,255,25);
-                color: rgba(255,255,255,250);
-                border: 1px solid rgba(255,255,255,50);
-                border-radius: 6px;
-                padding: 8px 16px;
+                background: rgba(255,255,255,18);
+                color: rgba(255,255,255,230);
+                border: 1px solid rgba(255,255,255,35);
+                border-radius: 7px;
+                padding: 8px 18px;
                 font-size: 11px;
                 font-weight: 600;
+                font-family: 'Poppins', 'Segoe UI', sans-serif;
             }
             QPushButton:hover {
-                background: rgba(255,255,255,35);
+                background: rgba(255,255,255,28);
+                border-color: rgba(255,255,255,50);
+            }
+            QPushButton:pressed {
+                background: rgba(255,255,255,12);
             }
         """)
         
@@ -878,14 +1000,13 @@ class OverlayWindow(QtWidgets.QWidget):
         self._is_hovered = True
         self._animate_opacity(0.85)
         
-        # Fade in background box only in rectangular mode
-        # In circular mode the bg_box corners are visible outside the circle
-        if self._window_shape != 'circular':
-            self._bg_box_anim.stop()
-            self._bg_box_anim.setStartValue(self._bg_opacity_effect.opacity())
-            self._bg_box_anim.setEndValue(1.0)
-            self._bg_box_anim.start()
-        
+        # Brighten the rim and lift the fill.  This is safe in every shape now:
+        # the old code had to skip circular mode because the hover QFrame's
+        # square corners poked outside the rounded window.  There is no second
+        # frame any more, so the blend just follows the one path.
+        self._animate_hover(1.0)
+
+
         # Only show info/close in rectangular mode
         if self._layout_manager.should_show_info_label():
             # Show info label and start alternation
@@ -924,12 +1045,9 @@ class OverlayWindow(QtWidgets.QWidget):
             if not self._alert_mode:
                 self._animate_opacity(0.65)
                 
-            # Fade out background box
-            self._bg_box_anim.stop()
-            self._bg_box_anim.setStartValue(self._bg_opacity_effect.opacity())
-            self._bg_box_anim.setEndValue(0.0)
-            self._bg_box_anim.start()
-            
+            # Settle the rim back to rest
+            self._animate_hover(0.0)
+
             # Hide info label and stop alternation (only if should be shown)
             if self._layout_manager.should_show_info_label():
                 self._info_label.setVisible(False)
@@ -1050,13 +1168,10 @@ class OverlayWindow(QtWidgets.QWidget):
             self._info_label.setVisible(True)
             
             self._animate_opacity(1.0)
-            
+
             # Glow effect
-            self._bg_box_anim.stop()
-            self._bg_box_anim.setStartValue(self._bg_opacity_effect.opacity())
-            self._bg_box_anim.setEndValue(1.0)
-            self._bg_box_anim.start()
-            
+            self._animate_hover(1.0)
+
             # Play sound
             self.play_alert_sound(custom_sound_path, loop_sound)
             
@@ -1071,10 +1186,7 @@ class OverlayWindow(QtWidgets.QWidget):
             
             if not self._is_hovered:
                 self._animate_opacity(0.65)
-                self._bg_box_anim.stop()
-                self._bg_box_anim.setStartValue(self._bg_opacity_effect.opacity())
-                self._bg_box_anim.setEndValue(0.0)
-                self._bg_box_anim.start()
+                self._animate_hover(0.0)
                 
     def update_countdown(self, text):
         """Update countdown text (only in non-alert mode)"""
