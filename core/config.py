@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Application metadata
 APP_NAME = "HydraPing"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0"
 APP_AUTHOR = "HydraPing Team"
 ORG_NAME = "HydraPing"
 ORG_DOMAIN = "hydra-ping.app"
